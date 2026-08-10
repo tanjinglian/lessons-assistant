@@ -527,7 +527,7 @@ textarea:focus { border-color: var(--ink); }
       <p class="card-body">{{ reminder.reminder }}</p>
       <div class="chip-list">
         <span class="chip" v-for="item in reminder.experiences" :key="item.id">
-          {{ item.title }}（{{ item.similarity.toFixed(2) }}）
+          {{ item.title }}
         </span>
       </div>
       <div class="actions-row">
@@ -586,13 +586,28 @@ textarea:focus { border-color: var(--ink); }
 
     <!-- Search -->
     <div class="search-row">
-      <input v-model="filters.keyword" placeholder="搜索标题或内容…" />
+      <input v-model="filters.keyword" placeholder="输入问题或关键词，如「项目延期怎么办」…" @keyup.enter="ragSearch" />
             <select v-model="filters.category" @change="reloadExperiences" class="category-select">
         <option value="">全部分类</option>
         <option v-for="cat in categoryOptions" :key="cat" :value="cat">{{ cat }}</option>
       </select>
-      <button class="btn btn-pink" @click="reloadExperiences">搜索</button>
+      <button class="btn btn-pink" @click="ragSearch" :disabled="ragSearching">{{ ragSearching ? '搜索中…' : '语义搜索' }}</button>
+      <button class="btn btn-ghost" @click="reloadExperiences" style="padding:10px 16px;font-size:13px;">列表</button>
     </div>
+
+    <!-- RAG 搜索结果 -->
+    <article class="note-card card-add tape" v-if="ragAnswer" style="background:var(--blue);margin-bottom:20px;">
+      <div class="card-head">
+        <h2class="card-title" style="font-size:16px;">🧠 AI 建议</h2>
+        <span class="card-tag" style="background:var(--blue-deep);">RAG</span>
+      </div>
+      <p class="card-body" style="white-space:pre-wrap;margin-top:8px;line-height:1.8;">{{ ragAnswer }}</p>
+      <div class="chip-list" v-if="ragResults.length" style="margin-top:12px;">
+        <span class="chip" v-for="r in ragResults" :key="r.id" :title="r.content" style="cursor:help;">
+          {{ r.title }} <small v-if="r.similarity">({{ (r.similarity * 100).toFixed(0) }}%)</small>
+        </span>
+      </div>
+    </article>
 
     <!-- 新增表单 -->
     <article class="note-card card-add tape" v-if="showCreateForm">
@@ -729,6 +744,11 @@ createApp({
     const newExperience = reactive({ title: "", content: "", category: "", tags: "" });
     const showCreateForm = ref(false);
 
+    // RAG 搜索状态
+    const ragSearching = ref(false);
+    const ragAnswer = ref("");
+    const ragResults = ref([]);
+
     const editingId = ref(null);
     const editForm  = reactive({ title: "", content: "", category: "", tags: "" });
 
@@ -864,7 +884,24 @@ createApp({
       } catch {}
     }
 
-    async function reloadExperiences() { filters.page = 1; await loadExperiences(); }
+    async function reloadExperiences() { ragAnswer.value = ""; ragResults.value = []; filters.page = 1; await loadExperiences(); }
+
+    async function ragSearch() {
+      const query = filters.keyword.trim();
+      if (!query) { reloadExperiences(); return; }
+      ragSearching.value = true;
+      ragAnswer.value = "";
+      ragResults.value = [];
+      try {
+        const result = await request("/api/search", "POST", { query, top_k: 5 });
+        ragAnswer.value = result.data.answer || "未找到相关经验。";
+        ragResults.value = result.data.sources || [];
+      } catch (e) {
+        ragAnswer.value = `搜索出错：${e.message}`;
+      } finally {
+        ragSearching.value = false;
+      }
+    }
 
     async function createManualExperience() {
       const payload = {
@@ -924,8 +961,9 @@ createApp({
       activeTab, recordForm, savingRecord, saveHint, reminder, feedbackHint,
       extractCandidate, candidateTagsText, filters, experiences, totalPages,
       newExperience, showCreateForm, editingId, editForm, pitColors, categoryOptions,
+      ragSearching, ragAnswer, ragResults,
       onSceneInput, saveRecord, confirmExtractedCandidate, markFeedback,
-      enterLibraryTab, loadExperiences, reloadExperiences, toggleCreateForm,
+      enterLibraryTab, loadExperiences, reloadExperiences, ragSearch, toggleCreateForm,
       createManualExperience, startEdit, cancelEdit, saveEdit, deleteExperience,
       prevPage, nextPage,
     };

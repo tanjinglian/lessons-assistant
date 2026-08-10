@@ -1,225 +1,17 @@
 """
-前事鉴 · Vercel Serverless 适配版
-====================================
-精简版：去掉 FAISS/FastEmbed，改用关键词匹配 + DeepSeek LLM。
-数据库使用 Vercel Postgres (Neon) 替代 SQLite。
-
-环境变量要求：
-  DEEPSEEK_API_KEY - DeepSeek API 密钥
-  DEEPSEEK_BASE_URL - DeepSeek API 基础地址（默认 https://api.deepseek.com）
-  DEEPSEEK_MODEL - 模型名（默认 deepseek-chat）
-  POSTGRES_URL - Vercel Postgres 连接字符串（自动注入）
+前事鉴 - Vercel Serverless Backend (RAG 版)
+使用 SiliconFlow Embedding API + Supabase pgvector 实现完整 RAG
 """
-from __future__ import annotations
-
-import json
 import os
-import time
-from datetime import date, datetime
-from typing import Any
-
+import json
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.exceptions import RequestValidationError
+from datetime import datetime, date
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from mangum import Mangum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from typing import Optional, List
 
-#─────────── Pydantic Models ───────────
-
-class APIResponse(BaseModel):
-    code: int = 0
-    message: str = "ok"
-    data: Any = None
-
-
-class RecordUpsertRequest(BaseModel):
-    date: str
-    today_events: str = ""
-    tomorrow_plan: str = ""
-
-
-class ExperienceCreateRequest(BaseModel):
-    title: str
-    content: str
-    category: str = ""
-    tags: list[str] = Field(default_factory=list)
-    source: str = "manual"
-    source_record_id: int | None = None
-
-
-class ExperienceUpdateRequest(BaseModel):
-    title: str
-    content: str
-    category: str = ""
-    tags: list[str] = Field(default_factory=list)
-
-
-class ReminderRequest(BaseModel):
-    content: str
-
-
-# ─────────── Database (Postgres via psycopg2 or fallback to SQLite /tmp) ───────────
-
-import sqlite3
-
-DB_PATH = "/tmp/pitfall.db"
-
-
-def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
-
-
-def init_db() -> None:
-    with get_conn() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS daily_records (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL UNIQUE,
-                today_events TEXT,
-                tomorrow_plan TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS experiences (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                category TEXT,
-                tags TEXT,
-                source TEXT NOT NULL DEFAULT 'manual',
-                source_record_id INTEGER,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS experiences_fts USING fts5(
-                title, content, category, tags,
-                content='experiences',
-                content_rowid='id'
-            )
-        """)
-        # Triggers to keep FTS in sync
-        conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS experiences_ai AFTER INSERT ON experiences BEGIN
-                INSERT INTO experiences_fts(rowid, title, content, category, tags)
-                VALUES (new.id, new.title, new.content, new.category, new.tags);
-            END
-        """)
-        conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS experiences_ad AFTER DELETE ON experiences BEGIN
-                INSERT INTO experiences_fts(experiences_fts, rowid, title, content, category, tags)
-                VALUES ('delete', old.id, old.title, old.content, old.category, old.tags);
-            END
-        """)
-        conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS experiences_au AFTER UPDATE ON experiences BEGIN
-                INSERT INTO experiences_fts(experiences_fts, rowid, title, content, category, tags)
-                VALUES ('delete', old.id, old.title, old.content, old.category, old.tags);
-                INSERT INTO experiences_fts(rowid, title, content, category, tags)
-                VALUES (new.id, new.title, new.content, new.category, new.tags);
-            END
-        """)
-
-
-init_db()
-
-# ─────────── DeepSeek Service ───────────
-
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-DEEPSEEK_ENABLED = bool(DEEPSEEK_API_KEY)
-
-
-async def call_deepseek(system_prompt: str, user_prompt: str) -> str:
-    if not DEEPSEEK_ENABLED:
-        return ""
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            f"{DEEPSEEK_BASE_URL}/v1/chat/completions",
-            headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
-            json={
-                "model": DEEPSEEK_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "temperature": 0.3,
-                "max_tokens": 800,
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"].strip()
-
-
-async def extract_experience_via_llm(text: str) -> dict:
-    system_prompt = """你是一个职场经验提炼助手。根据用户的日常记录，判断是否有可提炼的经验教训。
-如果有，返回JSON格式：{"has_candidate":true,"candidate":{"title":"标题","content":"经验内容","category":"分类","tags":["标签1","标签2"]}}
-如果没有，返回：{"has_candidate":false}
-只返回JSON，不要其他内容。"""
-    result = await call_deepseek(system_prompt, text)
-    try:
-        return json.loads(result)
-    except (json.JSONDecodeError, TypeError):
-        return {"has_candidate": False}
-
-
-async def generate_reminder_via_llm(content: str, experiences: list[dict]) -> str:
-    system_prompt = "你是一个友善的职场经验提醒助手。根据用户当前正在做的事，结合过往经验，给出简洁的提醒建议（50字以内）。"
-    exp_text = "\n".join([f"- {e['title']}: {e['content']}" for e in experiences[:3]])
-    user_prompt = f"用户当前在做：{content}\n\n相关过往经验：\n{exp_text}\n\n请给出简洁提醒："
-    return await call_deepseek(system_prompt, user_prompt)
-
-
-# ─────────── Local fallback extract ───────────
-
-def local_extract_experience(text: str) -> dict:
-    clean = " ".join(text.replace("\n", " ").split())
-    if len(clean) < 20:
-        return {"has_candidate": False}
-
-    categories = {
-        "项目": ["项目", "排期", "成本", "方案", "交付", "风险"],
-        "沟通": ["沟通", "汇报", "反馈", "会议", "对齐"],
-        "协作": ["协作", "同事", "跨团队", "分工", "配合"],
-        "情绪": ["情绪", "焦虑", "生气", "批评", "压力"],
-    }
-
-    selected_cat = "其他"
-    selected_tags: list[str] = []
-    for cat, kws in categories.items():
-        matched = [kw for kw in kws if kw in clean]
-        if matched:
-            selected_cat = cat
-            selected_tags = matched
-            break
-
-    if not selected_tags:
-        selected_tags = ["复盘", "避坑"]
-
-    return {
-        "has_candidate": True,
-        "candidate": {
-            "title": f"{selected_cat}场景先复盘再行动",
-            "content": f"基于记录建议先复盘关键事实和风险：{clean[:120]}",
-            "category": selected_cat,
-            "tags": selected_tags[:5],
-        },
-    }
-
-
-# ─────────── FastAPI App ───────────
-
-app = FastAPI(title="前事鉴 API (Vercel)", version="1.0")
+app = FastAPI(title="前事鉴 API (RAG)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -228,265 +20,368 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ============ 配置 ============
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+SILICONFLOW_API_KEY = os.environ.get("SILICONFLOW_API_KEY", "")
+SILICONFLOW_BASE_URL = os.environ.get("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
 
-@app.exception_handler(HTTPException)
-async def http_exc_handler(_, exc: HTTPException):
-    return JSONResponse(status_code=exc.status_code, content={"code": exc.status_code, "message": str(exc.detail), "data": None})
+# ============ Supabase 客户端辅助 ============
+def supabase_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
 
+async def supabase_request(method: str, path: str, body=None, params=None):
+    """发送请求到 Supabase REST API"""
+    url = f"{SUPABASE_URL}/rest/v1/{path}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.request(method, url, headers=supabase_headers(), json=body, params=params)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=resp.status_code, detail=f"Supabase error: {resp.text}")
+        if resp.status_code == 204:
+            return []
+        return resp.json()
 
-@app.exception_handler(RequestValidationError)
-async def validation_exc_handler(_, exc: RequestValidationError):
-    return JSONResponse(status_code=422, content={"code": 422, "message": "参数校验失败", "data": None})
+async def supabase_rpc(fn_name: str, body: dict):
+    """调用 Supabase RPC函数"""
+    url = f"{SUPABASE_URL}/rest/v1/rpc/{fn_name}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(url, headers=supabase_headers(), json=body)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=resp.status_code, detail=f"Supabase RPC error: {resp.text}")
+        return resp.json()
 
+# ============ Embedding API============
+async def get_embedding(text: str) -> List[float]:
+    """调用 SiliconFlow Embedding API 获取文本向量"""
+    if not SILICONFLOW_API_KEY:
+        raise HTTPException(status_code=500, detail="SILICONFLOW_API_KEY not configured")
+    
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{SILICONFLOW_BASE_URL}/embeddings",
+            headers={
+                "Authorization": f"Bearer {SILICONFLOW_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": EMBEDDING_MODEL,
+                "input": text,
+                "encoding_format": "float",
+            }
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"Embedding API error: {resp.text}")
+        data = resp.json()
+        return data["data"][0]["embedding"]
 
-@app.exception_handler(Exception)
-async def unhandled_exc_handler(_, exc: Exception):
-    return JSONResponse(status_code=500, content={"code": 500, "message": "服务器内部错误", "data": None})
+# ============ DeepSeek LLM ============
+async def call_deepseek(system_prompt: str, user_prompt: str) -> str:
+    """调用 DeepSeek Chat API"""
+    if not DEEPSEEK_API_KEY:
+        return "（未配置 DeepSeek API Key，无法生成 AI 分析）"
+    
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": DEEPSEEK_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.7,
+                "max_tokens": 1500,
+            }
+        )
+        if resp.status_code != 200:
+            return f"（DeepSeek API 调用失败: {resp.status_code}）"
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
 
+# ============ 数据模型 ============
+class RecordCreate(BaseModel):
+    scene: str
+    handling: str
+    result: str
+    reflection: Optional[str] = ""
+    record_date: Optional[str] = None
 
-def now_str() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+class ExperienceCreate(BaseModel):
+    title: str
+    content: str
+    category: Optional[str] = ""
+    tags: Optional[str] = ""
 
+class SearchQuery(BaseModel):
+    query: str
+    top_k: Optional[int] = 5
 
-def row_to_dict(row) -> dict:
-    if row is None:
-        return {}
-    return dict(row)
-
-
-# ─── Health───
-
-@app.get("/health")
-async def health():
-    return {"ok": True, "service": "pitfall_assistant_vercel", "deepseek_enabled": DEEPSEEK_ENABLED}
-
+# ============ API 路由 ============
 
 @app.get("/api/health")
-async def api_health():
-    return {"ok": True, "service": "pitfall_assistant_vercel", "deepseek_enabled": DEEPSEEK_ENABLED}
+def health():
+    return {
+        "status": "ok",
+        "version": "vercel-rag-v1",
+        "rag_enabled": bool(SILICONFLOW_API_KEY and SUPABASE_URL),
+        "llm_enabled": bool(DEEPSEEK_API_KEY),
+    }
 
-
-# ─── Records ───
-
+# ---------- 每日记录 ----------
 @app.post("/api/records")
-async def upsert_record(req: RecordUpsertRequest):
-    now = now_str()
-    with get_conn() as conn:
-        conn.execute("""
-            INSERT INTO daily_records (date, today_events, tomorrow_plan, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(date) DO UPDATE SET
-                today_events = excluded.today_events,
-                tomorrow_plan = excluded.tomorrow_plan,
-                updated_at = excluded.updated_at
-        """, (req.date, req.today_events.strip(), req.tomorrow_plan.strip(), now, now))
-        row = conn.execute("SELECT * FROM daily_records WHERE date = ?", (req.date,)).fetchone()
-
-    record = row_to_dict(row)
-
-    # Async extract
-    merged = f"今天发生的事：{req.today_events}\n明天的规划：{req.tomorrow_plan}"
+async def save_record(record: RecordCreate):
+    """保存每日记录"""
+    record_date = record.record_date or date.today().isoformat()
+    
+    data = {
+        "scene": record.scene,
+        "handling": record.handling,
+        "result": record.result,
+        "reflection": record.reflection or "",
+        "record_date": record_date,
+        "created_at": datetime.now().isoformat(),
+    }
+    
+    result = await supabase_request("POST", "daily_records", body=data)
+    record_id = result[0]["id"] if result else None
+    
+    # 异步提炼经验（简化为同步，Serverless 限制）
     extract_result = None
-    try:
-        if DEEPSEEK_ENABLED:
-            extract_result = await extract_experience_via_llm(merged)
-        else:
-            extract_result = local_extract_experience(merged)
-    except Exception:
-        extract_result = local_extract_experience(merged)
-
-    return APIResponse(code=0, data={"record": record, "extract_result": extract_result})
-
+    if DEEPSEEK_API_KEY:
+        system_prompt = """你是一位职场经验提炼专家。根据用户的工作记录，提炼出可复用的经验教训。
+输出JSON格式：{"title": "经验标题", "content": "详细经验内容", "category": "分类", "tags": "标签1,标签2"}
+分类只能从以下选取：沟通协作、技术决策、项目管理、职场人际、自我管理"""
+        
+        user_prompt = f"场景：{record.scene}\n处理方式：{record.handling}\n结果：{record.result}\n反思：{record.reflection}"
+        
+        try:
+            ai_response = await call_deepseek(system_prompt, user_prompt)
+            #尝试解析 JSON
+            ai_response_clean = ai_response.strip()
+            if ai_response_clean.startswith("```"):
+                ai_response_clean = ai_response_clean.split("\n", 1)[1].rsplit("```", 1)[0]
+            extract_result = json.loads(ai_response_clean)
+        except (json.JSONDecodeError, Exception):
+            extract_result = None
+    
+    return {
+        "success": True,
+        "id": record_id,
+        "extract_candidate": extract_result,
+    }
 
 @app.get("/api/records")
-async def get_records(
-    date_value: str | None = Query(default=None, alias="date"),
-    year: int | None = None,
-    month: int | None = None,
+async def get_records(year: Optional[int] = None, month: Optional[int] = None):
+    """获取记录列表"""
+    params = {"select": "*", "order": "record_date.desc"}
+    
+    if year and month:
+        start = f"{year}-{month:02d}-01"
+        if month == 12:
+            end = f"{year + 1}-01-01"
+        else:
+            end = f"{year}-{month + 1:02d}-01"
+        params["record_date"] = f"gte.{start}"
+        params["record_date"] = f"lt.{end}"
+        # Supabase REST API 多条件需要用 and 语法
+        path = f"daily_records?select=*&order=record_date.desc&record_date=gte.{start}&record_date=lt.{end}"
+        result = await supabase_request("GET", path)
+    else:
+        result = await supabase_request("GET", "daily_records", params=params)
+    
+    return {"records": result}
+
+# ---------- 经验库 ----------
+@app.get("/api/experiences")
+async def get_experiences(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: Optional[str] = None,
+    category: Optional[str] = None,
 ):
-    with get_conn() as conn:
-        if date_value:
-            row = conn.execute("SELECT * FROM daily_records WHERE date = ?", (date_value,)).fetchone()
-            return APIResponse(code=0, data={"record": row_to_dict(row) if row else None})
-
-        if year and month:
-            prefix = f"{year}-{month:02d}"
-            rows = conn.execute(
-                "SELECT * FROM daily_records WHERE date LIKE ? ORDER BY date DESC",
-                (f"{prefix}%",),
-            ).fetchall()
-            return APIResponse(code=0, data={"records": [row_to_dict(r) for r in rows]})
-
-        rows = conn.execute("SELECT * FROM daily_records ORDER BY date DESC LIMIT 60").fetchall()
-        return APIResponse(code=0, data={"records": [row_to_dict(r) for r in rows]})
-
-
-@app.get("/api/records/{record_id}/extract-status")
-async def get_extract_status(record_id: int):
-    # Vercel 版没有异步任务持久化，返回已完成状态
-    return APIResponse(code=0, data={"status": "completed", "has_candidate": False, "message": "Vercel 版同步返回"})
-
-
-# ─── Experiences ───
+    """获取经验列表（关键词过滤）"""
+    # 构建查询
+    path = f"experiences?select=*&order=created_at.desc"
+    
+    if keyword:
+        path += f"&or=(title.ilike.%25{keyword}%25,content.ilike.%25{keyword}%25)"
+    if category:
+        path += f"&category=eq.{category}"
+    
+    # 分页
+    offset = (page - 1) * page_size
+    path += f"&limit={page_size}&offset={offset}"
+    
+    result = await supabase_request("GET", path)
+    
+    # 获取总数
+    count_path = "experiences?select=id"
+    if keyword:
+        count_path += f"&or=(title.ilike.%25{keyword}%25,content.ilike.%25{keyword}%25)"
+    if category:
+        count_path += f"&category=eq.{category}"
+    count_result = await supabase_request("GET", count_path)
+    total = len(count_result)
+    
+    return {
+        "experiences": result,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 @app.post("/api/experiences")
-async def create_experience(req: ExperienceCreateRequest):
-    now = now_str()
-    tags_str = ",".join(req.tags)
-    with get_conn() as conn:
-        cursor = conn.execute("""
-            INSERT INTO experiences (title, content, category, tags, source, source_record_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (req.title.strip(), req.content.strip(), req.category.strip(), tags_str, req.source, req.source_record_id, now, now))
-        row = conn.execute("SELECT * FROM experiences WHERE id = ?", (cursor.lastrowid,)).fetchone()
-    item = row_to_dict(row)
-    item["tags"] = [t.strip() for t in (item.get("tags") or "").split(",") if t.strip()]
-    return APIResponse(code=0, data={"experience": item})
-
-
-@app.get("/api/experiences")
-async def list_experiences(keyword: str = "", tag: str = "", page: int = 1, page_size: int = 20):
-    offset = (page - 1) * page_size
-    with get_conn() as conn:
-        if keyword.strip():
-            # FTS search
-            rows = conn.execute("""
-                SELECT e.* FROM experiences e
-                JOIN experiences_fts fts ON e.id = fts.rowid
-                WHERE experiences_fts MATCH ?
-                ORDER BY e.updated_at DESC LIMIT ? OFFSET ?
-            """, (keyword.strip(), page_size, offset)).fetchall()
-            total_row = conn.execute("""
-                SELECT COUNT(*) as cnt FROM experiences e
-                JOIN experiences_fts fts ON e.id = fts.rowid
-                WHERE experiences_fts MATCH ?
-            """, (keyword.strip(),)).fetchone()
-            total = total_row["cnt"] if total_row else 0
-        elif tag.strip():
-            rows = conn.execute("""
-                SELECT * FROM experiences WHERE tags LIKE ? ORDER BY updated_at DESC LIMIT ? OFFSET ?
-            """, (f"%{tag.strip()}%", page_size, offset)).fetchall()
-            total_row = conn.execute("SELECT COUNT(*) as cnt FROM experiences WHERE tags LIKE ?", (f"%{tag.strip()}%",)).fetchone()
-            total = total_row["cnt"] if total_row else 0
-        else:
-            rows = conn.execute("SELECT * FROM experiences ORDER BY updated_at DESC LIMIT ? OFFSET ?", (page_size, offset)).fetchall()
-            total_row = conn.execute("SELECT COUNT(*) as cnt FROM experiences").fetchone()
-            total = total_row["cnt"] if total_row else 0
-
-    items = []
-    for r in rows:
-        item = row_to_dict(r)
-        item["tags"] = [t.strip() for t in (item.get("tags") or "").split(",") if t.strip()]
-        items.append(item)
-
-    return APIResponse(code=0, data={"items": items, "total": total})
-
-
-@app.put("/api/experiences/{experience_id}")
-async def update_experience(experience_id: int, req: ExperienceUpdateRequest):
-    now = now_str()
-    tags_str = ",".join(req.tags)
-    with get_conn() as conn:
-        conn.execute("""
-            UPDATE experiences SET title=?, content=?, category=?, tags=?, updated_at=?
-            WHERE id=?
-        """, (req.title.strip(), req.content.strip(), req.category.strip(), tags_str, now, experience_id))
-        row = conn.execute("SELECT * FROM experiences WHERE id = ?", (experience_id,)).fetchone()
-
-    if not row:
-        raise HTTPException(status_code=404, detail="experience not found")
-
-    item = row_to_dict(row)
-    item["tags"] = [t.strip() for t in (item.get("tags") or "").split(",") if t.strip()]
-    return APIResponse(code=0, data={"experience": item})
-
-
-@app.delete("/api/experiences/{experience_id}")
-async def delete_experience(experience_id: int):
-    with get_conn() as conn:
-        cursor = conn.execute("DELETE FROM experiences WHERE id = ?", (experience_id,))
-        deleted = cursor.rowcount > 0
-    return APIResponse(code=0, data={"deleted": deleted})
-
-
-# ─── Experience Extract ───
-
-@app.post("/api/experiences/extract")
-async def extract_experience(req: RecordUpsertRequest):
-    merged = f"今天发生的事：{req.today_events}\n明天的规划：{req.tomorrow_plan}"
-    if len(merged.strip()) < 10:
-        return APIResponse(code=0, data={"has_candidate": False})
-
-    try:
-        if DEEPSEEK_ENABLED:
-            result = await extract_experience_via_llm(merged)
-        else:
-            result = local_extract_experience(merged)
-    except Exception:
-        result = local_extract_experience(merged)
-
-    return APIResponse(code=0, data=result)
-
-
-# ─── Reminder (keyword-based for Vercel version) ───
-
-@app.post("/api/reminder")
-async def reminder(req: ReminderRequest):
-    content = req.content.strip()
-    if len(content) < 4:
-        return APIResponse(code=0, data={"matched": False})
-
-    # Keyword search in experiences
-    with get_conn() as conn:
+async def create_experience(exp: ExperienceCreate):
+    """创建经验（同时生成向量）"""
+    data = {
+        "title": exp.title,
+        "content": exp.content,
+        "category": exp.category or "",
+        "tags": exp.tags or "",
+        "created_at": datetime.now().isoformat(),
+    }
+    
+    # 生成 Embedding 向量
+    if SILICONFLOW_API_KEY:
         try:
-            rows = conn.execute("""
-                SELECT e.* FROM experiences e
-                JOIN experiences_fts fts ON e.id = fts.rowid
-                WHERE experiences_fts MATCH ?
-                LIMIT 3
-            """, (content,)).fetchall()
-        except Exception:
-            # FTS match might fail on special chars, fallback to LIKE
-            rows = conn.execute("""
-                SELECT * FROM experiences WHERE title LIKE ? OR content LIKE ? LIMIT 3
-            """, (f"%{content[:20]}%", f"%{content[:20]}%")).fetchall()
+            text_for_embedding = f"{exp.title} {exp.content}"
+            embedding = await get_embedding(text_for_embedding)
+            data["embedding"] = embedding
+        except Exception as e:
+            print(f"Embedding generation failed: {e}")
+            # 向量生成失败不阻塞保存
+    
+    result = await supabase_request("POST", "experiences", body=data)
+    return {"success": True, "experience": result[0] if result else None}
 
-    if not rows:
-        return APIResponse(code=0, data={"matched": False})
-
-    experiences = []
-    for r in rows:
-        item = row_to_dict(r)
-        item["tags"] = [t.strip() for t in (item.get("tags") or "").split(",") if t.strip()]
-        experiences.append(item)
-
-    # Generate reminder
-    reminder_text = ""
-    if DEEPSEEK_ENABLED:
+@app.put("/api/experiences/{exp_id}")
+async def update_experience(exp_id: int, exp: ExperienceCreate):
+    """更新经验"""
+    data = {
+        "title": exp.title,
+        "content": exp.content,
+        "category": exp.category or "",
+        "tags": exp.tags or "",
+    }
+    
+    # 重新生成向量
+    if SILICONFLOW_API_KEY:
         try:
-            reminder_text = await generate_reminder_via_llm(content, experiences)
+            text_for_embedding = f"{exp.title} {exp.content}"
+            embedding = await get_embedding(text_for_embedding)
+            data["embedding"] = embedding
         except Exception:
             pass
+    
+    result = await supabase_request("PATCH", f"experiences?id=eq.{exp_id}", body=data)
+    return {"success": True, "experience": result[0] if result else None}
 
-    if not reminder_text:
-        top = experiences[0]
-        reminder_text = f"你之前在『{top['title']}』里踩过类似坑，建议先列清目标和风险再推进。"
+@app.delete("/api/experiences/{exp_id}")
+async def delete_experience(exp_id: int):
+    """删除经验"""
+    await supabase_request("DELETE", f"experiences?id=eq.{exp_id}")
+    return {"success": True}
 
-    card_experiences = [{"id": e["id"], "title": e["title"], "similarity": 0.8} for e in experiences]
-    return APIResponse(code=0, data={
-        "matched": True,
-        "experiences": card_experiences,
-        "reminder": reminder_text,
-        "degraded": not DEEPSEEK_ENABLED,
+# ---------- RAG 语义搜索 ----------
+@app.post("/api/search")
+async def rag_search(query: SearchQuery):
+    """
+    RAG 语义搜索：
+    1. 用SiliconFlow Embedding 把查询转成向量
+    2. 在 Supabase pgvector 中做相似度检索
+    3. 把检索结果喂给 DeepSeek 生成综合建议
+    """
+    if not SILICONFLOW_API_KEY:
+        raise HTTPException(status_code=500, detail="未配置 SiliconFlow API Key，无法使用语义搜索")
+    
+    # Step 1: 生成查询向量
+    query_embedding = await get_embedding(query.query)
+    
+    # Step 2: 调用 Supabase RPC 函数做向量相似度搜索
+    match_result = await supabase_rpc("match_experiences", {
+        "query_embedding": query_embedding,
+        "match_threshold": 0.3,
+        "match_count": query.top_k,
     })
+    
+    if not match_result:
+        return {
+            "answer": "未找到相关经验记录。试试换个说法搜索？",
+            "sources": [],
+        }
+    
+    # Step 3: 用检索结果 + DeepSeek 生成综合建议
+    context_parts = []
+    sources = []
+    for i, item in enumerate(match_result, 1):
+        context_parts.append(f"[经验{i}] {item['title']}\n{item['content']}")
+        sources.append({
+            "id": item.get("id"),
+            "title": item.get("title"),
+            "content": item.get("content", "")[:200],
+            "category": item.get("category", ""),
+            "similarity": item.get("similarity", 0),
+        })
+    
+    context_text = "\n\n".join(context_parts)
+    
+    if DEEPSEEK_API_KEY:
+        system_prompt = """你是一位资深职场顾问。根据用户的问题和检索到的相关经验，给出实用的建议。
+要求：
+1. 综合多条经验给出建议，不要简单复述
+2. 结合具体场景给出可操作的行动建议
+3. 如果经验之间有冲突，指出不同情况下的最佳选择
+4. 语言简洁有力，避免空话"""
+        
+        user_prompt = f"我的问题：{query.query}\n\n相关经验：\n{context_text}"
+        answer = await call_deepseek(system_prompt, user_prompt)
+    else:
+        answer = "（未配置 DeepSeek API Key。以下是语义匹配到的相关经验：）\n\n" + context_text
+    
+    return {
+        "answer": answer,
+        "sources": sources,
+    }
 
+# ---------- 记录分析（保存后触发）----------
+@app.post("/api/analyze-record")
+async def analyze_record(record: RecordCreate):
+    """分析记录并推荐相关经验"""
+    text = f"{record.scene} {record.handling} {record.result}"
+    
+    result = {"type": "none", "message": ""}
+    
+    if SILICONFLOW_API_KEY:
+        try:
+            embedding = await get_embedding(text)
+            matches = await supabase_rpc("match_experiences", {
+                "query_embedding": embedding,
+                "match_threshold": 0.5,
+                "match_count": 3,
+            })
+            if matches:
+                result = {
+                    "type": "remind",
+                    "message": f"发现 {len(matches)} 条相关经验",
+                    "related": [{"title": m["title"], "id": m["id"]} for m in matches],
+                }
+        except Exception:
+            pass
+    
+    return result
 
-# ─── Root ───
-
-@app.get("/")
-async def root():
-    return {"name": "前事鉴 API", "status": "running", "date": date.today().isoformat()}
-
-
-# ─── Vercel Handler ───
-handler = Mangum(app, lifespan="off")
+# ============ Vercel 入口 ============
+# Vercel Python Runtime 自动检测 app变量
