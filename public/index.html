@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>前事鉴 · 职场经验避坑助手</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shrikhand&family=ZCOOL+KuaiLe&family=Zilla+Slab:wght@300;400;500&family=Caveat:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+/*═══════════════════════════════════════════════════════════════
+   Scatterbrain × 前事鉴  — Production build
+   Post-it cork-board UI · white desk surface variant
+ ═══════════════════════════════════════════════════════════════ */
+:root {
+  --yellow:#ffe066;
+  --yellow-deep: #ffd43b;
+  --blue:        #a5d8ff;
+  --blue-deep:   #74c0fc;
+  --pink:        #ffc9c9;
+  --pink-deep:   #ff9f9f;
+  --green:       #b2f2bb;
+  --green-deep:  #8ce99a;
+  --orange:      #ffcc80;
+  --purple:      #d0bfff;
+  --cream:       #faf8f3;
+  --paper:       #f7f5f0;
+  --ink:         #2d2a26;
+  --ink-lt:      #5c5750;
+  --shadow:      rgba(45,42,38,0.15);
+  --shadow-deep: rgba(45,42,38,0.25);
+  --post-shadow: 2px 3px 15px var(--shadow), 0 1px 3px var(--shadow-deep);
+  --font-display: 'Shrikhand','ZCOOL KuaiLe', cursive;
+  --font-body:    'Zilla Slab', serif;
+  --font-script:  'Caveat', cursive;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+/* Grain overlay */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 60% 50% at 15% 15%, rgba(255,224,102,0.28) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 60% at 85% 20%, rgba(165,216,255,0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 50% 90%, rgba(255,201,201,0.18) 0%, transparent 60%),
+    linear-gradient(160deg, #faf8f3, #f4f1e8);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%23c92a2a' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='12' cy='12' r='3' fill='%23fff'/%3E%3C/svg%3E") 12 12, auto;
+}
+
+.app-shell {
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 40px 24px 72px;
+}
+
+/* ── HEADER ── */
+.app-header {
+  position: relative;
+  background: linear-gradient(135deg, var(--yellow), var(--yellow-deep));
+  box-shadow: var(--post-shadow);
+  padding: 52px 48px 44px;
+  margin-bottom: 40px;
+  transform: rotate(-0.4deg);
+}
+.app-header::before {
+  content: "";
+  position: absolute;
+  top: -14px; left: 50%;
+  transform: translateX(-50%);
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ff6b6b, #c92a2a);
+  box-shadow: 0 2px 5px var(--shadow-deep), inset -2px -2px 4px rgba(0,0,0,0.2);
+}
+.app-header::after {
+  content: "";
+  position: absolute;
+  top: -12px; left: 50%;
+  transform: translateX(-50%) rotate(-2deg);
+  width: 90px; height: 24px;
+  background: rgba(255,255,255,0.42);
+  border: 1px solid rgba(255,255,255,0.3);
+}
+.header-label {
+  display: block;
+  font-family: var(--font-script);
+  font-size: 13px; font-weight: 400;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--ink-lt); margin-bottom: 10px;
+}
+.app-title {
+  font-family: var(--font-display);
+  font-size: clamp(48px, 5.5vw, 80px);
+  font-weight: 400; line-height: 1.05;
+  letter-spacing: 0.01em; color: var(--ink); margin-bottom: 14px;
+}
+.app-tagline {
+  font-family: var(--font-body);
+  font-size: clamp(15px, 1.4vw, 18px);
+  font-weight: 400; line-height: 1.65;
+  color: var(--ink-lt); max-width: 52ch;
+}
+.header-note {
+  position: absolute; bottom: 18px; right: 30px;
+  font-family: var(--font-script); font-size: 14px;
+  color: var(--ink-lt); transform: rotate(3deg); opacity: 0.7;
+}
+
+/* ── TABS ── */
+.tabs-row { display: flex; gap: 12px; margin-bottom: 36px; padding-left: 6px; }
+.tab-btn {
+  border: none; padding: 12px 32px;
+  font-family: var(--font-display); font-size: 16px;
+  letter-spacing: 0.01em; color: var(--ink);
+  cursor: pointer; box-shadow: var(--post-shadow);
+  transition: transform 0.15s, box-shadow 0.15s; position: relative;
+}
+.tab-btn::before {
+  content: "";
+  position: absolute; top: -10px; left: 50%;
+  transform: translateX(-50%);
+  width: 14px; height: 14px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #74c0fc, #1864ab);
+  box-shadow: 0 2px 4px var(--shadow-deep);
+}
+.tab-btn:first-child {
+  background: linear-gradient(135deg, var(--blue), var(--blue-deep));
+  transform: rotate(-1.5deg);
+}
+.tab-btn:last-child {
+  background: linear-gradient(135deg, var(--green), var(--green-deep));
+  transform: rotate(1.2deg);
+}
+.tab-btn:hover {
+  transform: rotate(0deg) scale(1.03) translateY(-3px);
+  box-shadow: 3px 5px 20px var(--shadow-deep);
+}
+.tab-btn.active {
+  transform: rotate(0deg) translateY(-4px) scale(1.04);
+  box-shadow: 3px 6px 22px var(--shadow-deep); z-index: 10;
+}
+.tab-btn.active::after {
+  content: "";
+  position: absolute; top: -10px; left: 50%;
+  transform: translateX(-50%) rotate(-1deg);
+  width: 80px; height: 20px;
+  background: rgba(255,255,255,0.5);
+  border: 1px solid rgba(255,255,255,0.3);
+}
+
+/* ── SHEET (white desk) ── */
+.sheet {
+  position: relative;
+  background: linear-gradient(160deg, #ffffff0%, #f8f7f4 100%);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='none' stroke='rgba(45,42,38,0.045)' stroke-width='1'/%3E%3C/svg%3E");
+  background-size: 40px 40px;
+  border-radius: 4px;
+  padding: 40px 36px 44px;
+  box-shadow: 0 6px 28px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,1);
+  border: 1px solid rgba(45,42,38,0.07);
+}
+.sheet::before {
+  content: "";
+  position: absolute; bottom: 28px; right: 32px;
+  width: 54px; height: 54px; border-radius: 50%;
+  border: 3px solid var(--ink); opacity: 0.10;
+  pointer-events: none;
+}
+
+/* ── POST-IT base ── */
+.post-it {
+  position: relative;
+  box-shadow: var(--post-shadow);
+  padding: 28px 32px;
+}
+.post-it.pin::before {
+  content: "";
+  position: absolute; top: -13px; left: 50%;
+  transform: translateX(-50%);
+  width: 16px; height: 16px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ff6b6b, #c92a2a);
+  box-shadow: 0 2px 4px var(--shadow-deep), inset -2px -2px 4px rgba(0,0,0,0.2);
+  z-index: 2;
+}
+.post-it.tape::after {
+  content: "";
+  position: absolute; top: -13px; left: 50%;
+  transform: translateX(-50%) rotate(-2deg);
+  width: 80px; height: 22px;
+  background: rgba(255,255,255,0.42);
+  border: 1px solid rgba(255,255,255,0.3); z-index: 2;
+}
+.pit-yellow { background: linear-gradient(135deg, var(--yellow), var(--yellow-deep)); }
+.pit-blue{ background: linear-gradient(135deg, var(--blue), var(--blue-deep)); }
+.pit-pink   { background: linear-gradient(135deg, var(--pink), var(--pink-deep)); }
+.pit-green  { background: linear-gradient(135deg, var(--green), var(--green-deep)); }
+.pit-orange { background: var(--orange); }
+.pit-purple { background: var(--purple); }
+.pit-white  { background: #fff; border: 2px solid var(--ink); }
+
+/* ── DATE ROW ── */
+.date-row { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+.date-sticky {
+  display: inline-block;
+  background: var(--orange); box-shadow: var(--post-shadow);
+  padding: 6px 16px;
+  font-family: var(--font-display); font-size: 14px;
+  transform: rotate(-1.5deg); position: relative;
+}
+.date-sticky::before {
+  content: "";
+  position: absolute; top: -9px; left: 50%;
+  transform: translateX(-50%);
+  width: 10px; height: 10px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ffd43b, #f59f00);
+  box-shadow: 0 2px 3px var(--shadow-deep);
+}
+
+/* ── FORM FIELDS ── */
+.field-block { margin-bottom: 16px; }
+.field-label {
+  display: block;
+  font-family: var(--font-script); font-size: 12px;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--ink-lt); margin-bottom: 6px;
+}
+input, textarea {
+  width: 100%;
+  border: none;
+  border-bottom: 1.5px dashed rgba(45,42,38,0.3);
+  background: rgba(255,255,255,0.55);
+  padding: 10px 12px;
+  font-family: var(--font-body); font-size: 14px;
+  color: var(--ink); outline: none;
+  transition: border-color 0.15s, background 0.15s;
+  resize: vertical;
+}
+input:focus, textarea:focus {
+  border-bottom-color: var(--ink);
+  background: rgba(255,255,255,0.85);
+}
+input::placeholder, textarea::placeholder {
+  font-family: var(--font-script); font-size: 15px;
+  color: rgba(45,42,38,0.38);
+}
+input[type="date"] { max-width: 190px; cursor: pointer; }
+textarea {
+  line-height: 1.75; min-height: 120px;
+  border: 1.5px dashed rgba(45,42,38,0.25);
+  border-radius: 2px; padding: 12px 14px;
+}
+textarea:focus { border-color: var(--ink); }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.two-pit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 4px; }
+
+/* ── BUTTONS ── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: none;
+  background: linear-gradient(135deg, var(--yellow), var(--yellow-deep));
+  color: var(--ink); padding: 12px 26px;
+  font-family: var(--font-display); font-size: 15px;
+  letter-spacing: 0.01em; cursor: pointer;
+  box-shadow: var(--post-shadow);
+  transition: transform 0.12s, box-shadow 0.12s;
+  white-space: nowrap; position: relative;
+}
+.btn::before {
+  content: "";
+  position: absolute; top: -10px; left: 50%;
+  transform: translateX(-50%);
+  width: 12px; height: 12px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ff6b6b, #c92a2a);
+  box-shadow: 0 2px 3px var(--shadow-deep);
+  opacity: 0; transition: opacity 0.12s;
+}
+.btn:hover { transform: translateY(-3px) rotate(-0.5deg); box-shadow: 3px 5px 20px var(--shadow-deep); }
+.btn:hover::before { opacity: 1; }
+.btn:active { transform: translateY(0); box-shadow: var(--post-shadow); }
+.btn:disabled { opacity: 0.45; pointer-events: none; }
+.btn-blue{ background: linear-gradient(135deg, var(--blue), var(--blue-deep)); }
+.btn-green  { background: linear-gradient(135deg, var(--green), var(--green-deep)); }
+.btn-pink   { background: linear-gradient(135deg, var(--pink), var(--pink-deep)); }
+.btn-ghost  { background: rgba(255,255,255,0.55); box-shadow: 1px 2px 8px var(--shadow); color: var(--ink-lt); border: 1px dashed rgba(45,42,38,0.22); }
+.btn-ghost::before { display: none; }
+.btn-ghost:hover { background: rgba(255,255,255,0.85); color: var(--ink); }
+
+/* ── ACTIONS ROW ── */
+.actions-row { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 22px; }
+.hint-text { font-family: var(--font-script); font-size: 16px; color: var(--ink-lt); }
+
+/* ── SAVING SPINNER ── */
+.saving-spin { display: inline-flex; align-items: center; gap: 8px; }
+.saving-spin::before {
+  content: "";
+  display: inline-block; width: 12px; height: 12px;
+  border: 2px solid var(--ink-lt); border-top-color: var(--ink);
+  border-radius: 50%; animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── NOTE CARDS ── */
+.note-card {
+  position: relative; box-shadow: var(--post-shadow);
+  padding: 28px 30px 24px; margin-top: 28px;
+  animation: noteIn 0.28s cubic-bezier(0.16,1,0.3,1) both;
+}
+.note-card::before {
+  content: "";
+  position: absolute; top: -13px; left: 50%;
+  transform: translateX(-50%);
+  width: 16px; height: 16px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ff6b6b, #c92a2a);
+  box-shadow: 0 2px 4px var(--shadow-deep), inset -2px -2px 4px rgba(0,0,0,0.2);
+  z-index: 2;
+}
+.note-card.tape::after {
+  content: "";
+  position: absolute; top: -12px; left: 50%;
+  transform: translateX(-50%) rotate(-1.5deg);
+  width: 80px; height: 22px;
+  background: rgba(255,255,255,0.45);
+  border: 1px solid rgba(255,255,255,0.28); z-index: 2;
+}
+.card-reminder { background: linear-gradient(135deg, var(--pink), var(--pink-deep)); transform: rotate(0.7deg); }
+.card-candidate { background: linear-gradient(135deg, var(--blue), var(--blue-deep)); transform: rotate(-0.6deg); }
+.card-add { background: #fff; border: 2px solid var(--ink); transform: rotate(0.3deg); }
+
+.card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.card-title { font-family: var(--font-display); font-size: clamp(20px, 2.2vw, 30px); font-weight: 400; line-height: 1.15; color: var(--ink); }
+.card-tag { display: inline-block; font-family: var(--font-script); font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-lt); background: rgba(255,255,255,0.55); padding: 4px 10px; flex-shrink: 0; }
+.card-body { font-size: 14px; line-height: 1.75; color: var(--ink); }
+
+/* ── CHIPS ── */
+.chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.chip { background: rgba(255,255,255,0.62); border: 1px dashed rgba(45,42,38,0.3); padding: 3px 11px; font-family: var(--font-script); font-size: 13px; font-weight: 500; color: var(--ink); letter-spacing: 0.04em; }
+
+/* ── LIBRARY── */
+.section-head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 24px; }
+.section-eyebrow { display: block; font-family: var(--font-script); font-size: 12px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--ink-lt); margin-bottom: 4px; }
+.section-title { font-family: var(--font-display); font-size: clamp(32px, 3.5vw, 52px); font-weight: 400; line-height: 1.1; color: var(--ink); }
+.search-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; margin-bottom: 24px; }
+
+/* ── EXPERIENCE CARDS ── */
+.exp-card {
+  margin-top: 22px; padding: 24px 28px 20px;
+  box-shadow: var(--post-shadow); position: relative;
+  animation: noteIn 0.22s ease-out both;
+}
+.exp-card:nth-child(odd){ transform: rotate(-0.5deg); }
+.exp-card:nth-child(even) { transform: rotate(0.5deg); }
+.exp-card::before {
+  content: "";
+  position: absolute; top: -11px; left: 28px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #69db7c, #2f9e44);
+  box-shadow: 0 2px 4px var(--shadow-deep);
+}
+.exp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed rgba(45,42,38,0.2); }
+.exp-head h3 { font-family: var(--font-display); font-size: clamp(17px, 1.8vw, 23px); font-weight: 400; line-height: 1.2; color: var(--ink); flex: 1; }
+.small-actions { display: flex; gap: 8px; flex-shrink: 0; }
+/*── CATEGORY SELECT── */
+.category-select {
+  width: 100%;
+  border: none;
+  border-bottom: 1.5px dashed rgba(45,42,38,0.3);
+  background: rgba(255,255,255,0.55);
+  padding: 10px 8px;
+  font-family: var(--font-body); font-size: 14px;
+  color: var(--ink); outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M0,0 L6,8 L12,0' fill='none' stroke='%232d2a26' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 10px;
+  padding-right: 28px;
+}
+.category-select:focus { border-bottom-color: var(--ink); background-color: rgba(255,255,255,0.85); }
+
+/* ── EXP TITLE ROW (title + category badge inline) ── */
+.exp-title-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; flex: 1; }
+.exp-title-row h3 { flex: 0 0 auto; }
+.category-badge {
+  display: inline-block;
+  font-family: var(--font-script); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  background: var(--orange); color: var(--ink);
+  padding: 2px 10px;
+  box-shadow: 1px 1px 0px var(--ink);
+  white-space: nowrap; flex-shrink: 0;
+}
+
+
+/* ── EMPTY STATE ── */
+.empty-state {
+  background: #fff; border: 2px dashed rgba(45,42,38,0.22);
+  padding: 40px 28px; text-align: center; margin-top: 16px;
+  box-shadow: var(--post-shadow); transform: rotate(-0.3deg); position: relative;
+}
+.empty-state::before {
+  content: "";
+  position: absolute; top: -12px; left: 50%;
+  transform: translateX(-50%);
+  width: 16px; height: 16px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #74c0fc, #1864ab);
+  box-shadow: 0 2px 4px var(--shadow-deep);
+}
+.empty-title { font-family: var(--font-display); font-size:26px; color: var(--ink); margin-bottom: 10px; }
+.empty-sub { font-family: var(--font-script); font-size: 17px; color: var(--ink-lt); line-height: 1.5; }
+
+/* ── PAGINATION ── */
+.pagination-row { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 30px; }
+.page-info { font-family: var(--font-script); font-size: 15px; font-weight: 500; color: var(--ink-lt); background: rgba(255,255,255,0.55); padding: 7px 18px; box-shadow: var(--post-shadow); min-width: 130px; text-align: center; }
+
+@keyframes noteIn {
+  from { opacity: 0; transform: translateY(10px) rotate(2deg) scale(0.97); }
+  to   { opacity: 1; }
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  .two-col, .two-pit-grid { grid-template-columns: 1fr; }
+  .app-title { font-size: 48px; }
+  .section-head-row { flex-direction: column; }
+  .app-header { padding: 44px 28px 36px; }
+}
+@media (max-width: 680px) {
+  .app-shell { padding: 20px 14px 48px; }
+  .tabs-row { gap: 8px; }
+  .tab-btn { padding: 10px 20px; font-size: 14px; }
+  .search-row { grid-template-columns: 1fr; }
+  .sheet { padding: 28px 20px 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+  </style>
+</head>
+<body>
+<div id="app" class="app-shell">
+
+  <!-- ══ HEADER ══ -->
+  <header class="app-header">
+    <span class="header-label">Daily Log · Experience Bank</span>
+    <h1 class="app-title">前事鉴</h1>
+    <p class="app-tagline">把每天的真实经历，沉淀成关键时刻能想起来的经验卡片。</p>
+    <span class="header-note">:)</span>
+  </header>
+
+  <!-- ══ TABS ══ -->
+  <nav class="tabs-row" aria-label="主导航">
+    <button :class="['tab-btn', activeTab==='today' ? 'active' : '']"
+            @click="activeTab='today'">今日记录</button>
+    <button :class="['tab-btn', activeTab==='library' ? 'active' : '']"
+            @click="enterLibraryTab">经验库</button>
+  </nav>
+
+  <!-- ══════════════════════════════════════════
+       TODAY TAB
+  ══════════════════════════════════════════ -->
+  <section v-if="activeTab==='today'" class="sheet" aria-label="今日记录">
+
+    <div class="date-row">
+      <span class="date-sticky">日期</span>
+      <input type="date" v-model="recordForm.date" style="width:auto;min-width:160px;" />
+    </div>
+
+    <div class="two-pit-grid">
+      <div class="field-block">
+        <label class="field-label">今天发生的事</label>
+        <textarea
+                    v-model="recordForm.today_events"
+          @input="onSceneInput('today_events')"
+          placeholder="例如：今天和产品、研发开启动会，需求边界反复变更"
+          rows="8"
+        ></textarea>
+      </div>
+      <div class="field-block">
+        <label class="field-label">明天的规划</label>
+        <textarea
+          v-model="recordForm.tomorrow_plan"
+
+          placeholder="例如：明天要启动新项目，计划先做模型与成本评估"
+          rows="8"
+        ></textarea>
+      </div>
+    </div>
+
+    <div class="actions-row">
+      <button class="btn" @click="saveRecord" :disabled="savingRecord">
+        <template v-if="savingRecord"><span class="saving-spin">保存中</span></template>
+        <template v-else>保存今日记录</template>
+      </button>
+      <span class="hint-text" v-if="saveHint">{{ saveHint }}</span>
+    </div>
+
+    <!--智能提醒 -->
+    <article v-if="reminder && reminder.matched" class="note-card card-reminder tape">
+      <div class="card-head">
+        <h2 class="card-title">智能提醒</h2>
+        <span class="card-tag">命中经验</span>
+      </div>
+      <p class="card-body">{{ reminder.reminder }}</p>
+      <div class="chip-list">
+        <span class="chip" v-for="item in reminder.experiences" :key="item.id">
+          {{ item.title }}（{{ item.similarity.toFixed(2) }}）
+        </span>
+      </div>
+      <div class="actions-row">
+        <button class="btn btn-green" @click="markFeedback(1)">有用✓</button>
+        <button class="btn btn-ghost"@click="markFeedback(0)">没用</button>
+        <span class="hint-text" v-if="feedbackHint">{{ feedbackHint }}</span>
+      </div>
+    </article>
+
+    <!-- 提炼候选经验 -->
+    <article v-if="extractCandidate" class="note-card card-candidate tape">
+      <div class="card-head">
+        <h2 class="card-title">提炼候选经验</h2>
+        <span class="card-tag">待确认</span>
+      </div>
+      <div class="two-col" style="margin-top:10px;">
+        <div class="field-block">
+          <label class="field-label">标题</label>
+          <input v-model="extractCandidate.title" />
+        </div>
+        <div class="field-block">
+          <label class="field-label">分类</label>
+          <input v-model="extractCandidate.category" />
+        </div>
+      </div>
+      <div class="field-block">
+        <label class="field-label">内容</label>
+        <textarea v-model="extractCandidate.content" rows="3"></textarea>
+      </div>
+      <div class="field-block">
+        <label class="field-label">标签（中文逗号分隔）</label>
+        <input v-model="candidateTagsText" />
+      </div>
+      <div class="actions-row">
+        <button class="btn" @click="confirmExtractedCandidate">确认入库</button>
+        <button class="btn btn-ghost" @click="extractCandidate=null">忽略</button>
+      </div>
+    </article>
+
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       LIBRARY TAB
+  ══════════════════════════════════════════ -->
+  <section v-if="activeTab==='library'" class="sheet" aria-label="经验库">
+
+    <div class="section-head-row">
+      <div>
+        <span class="section-eyebrow">Knowledge Archive</span>
+        <h2 class="section-title">经验库</h2>
+      </div>
+      <button class="btn btn-blue" @click="toggleCreateForm" style="margin-top:18px;">
+        {{ showCreateForm ? '收起' : '新增经验' }}
+      </button>
+    </div>
+
+    <!-- Search -->
+    <div class="search-row">
+      <input v-model="filters.keyword" placeholder="搜索标题或内容…" />
+            <select v-model="filters.category" @change="reloadExperiences" class="category-select">
+        <option value="">全部分类</option>
+        <option v-for="cat in categoryOptions" :key="cat" :value="cat">{{ cat }}</option>
+      </select>
+      <button class="btn btn-pink" @click="reloadExperiences">搜索</button>
+    </div>
+
+    <!-- 新增表单 -->
+    <article class="note-card card-add tape" v-if="showCreateForm">
+      <div class="card-head">
+        <h2 class="card-title">新增经验</h2>
+        <span class="card-tag">manual</span>
+      </div>
+      <div class="two-col" style="margin-top:10px;">
+        <div class="field-block">
+          <label class="field-label">标题</label>
+          <input v-model="newExperience.title" placeholder="用一句话概括这条经验" />
+        </div>
+        <div class="field-block">
+          <label class="field-label">分类</label>
+          <input v-model="newExperience.category" placeholder="如：沟通协作、项目管理" />
+        </div>
+      </div>
+      <div class="field-block">
+        <label class="field-label">内容</label>
+        <textarea rows="3" v-model="newExperience.content" placeholder="详细描述这条经验的背景和结论..."></textarea>
+      </div>
+      <div class="field-block">
+        <label class="field-label">标签（中文逗号分隔）</label>
+        <input v-model="newExperience.tags" placeholder="如：跨部门,需求管理" />
+      </div>
+      <div class="actions-row">
+        <button class="btn" @click="createManualExperience">确认新增</button>
+        <button class="btn btn-ghost" @click="showCreateForm=false">取消</button>
+      </div>
+    </article>
+
+    <!-- 空状态 -->
+    <div class="empty-state" v-if="!experiences.length">
+      <p class="empty-title">经验库还是空的</p>
+      <p class="empty-sub">保存今日记录后系统会自动提炼，<br/>或点击「新增经验」手动添加。</p>
+    </div>
+
+    <!-- 经验卡片列表 -->
+    <article
+      class="exp-card"
+      v-for="(item, idx) in experiences"
+      :key="item.id"
+      :class="pitColors[idx % pitColors.length]"
+    >
+      <template v-if="editingId !== item.id">
+        <div class="exp-head">
+          <div class="exp-title-row">
+            <h3>{{ item.title }}</h3>
+            <span class="category-badge" v-if="item.category">{{ item.category }}</span>
+          </div>
+          <div class="small-actions">
+            <button class="btn" style="padding:6px 14px;font-size:13px;" @click="startEdit(item)">编辑</button>
+            <button class="btn btn-ghost" style="padding:6px 14px;font-size:13px;color:#a33;" @click="deleteExperience(item.id)">删除</button>
+          </div>
+        </div>
+        <p class="card-body">{{ item.content }}</p>
+        <div class="chip-list" v-if="item.tags && item.tags.length">
+          <span class="chip" v-for="tag in item.tags" :key="tag">{{ tag }}</span>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="two-col" style="margin-bottom:12px;">
+          <div class="field-block">
+            <label class="field-label">标题</label>
+            <input v-model="editForm.title" />
+          </div>
+          <div class="field-block">
+            <label class="field-label">分类</label>
+            <input v-model="editForm.category" />
+          </div>
+        </div>
+        <div class="field-block">
+          <label class="field-label">内容</label>
+          <textarea rows="3" v-model="editForm.content"></textarea>
+        </div>
+        <div class="field-block">
+          <label class="field-label">标签（中文逗号分隔）</label>
+          <input v-model="editForm.tags" />
+        </div>
+        <div class="actions-row">
+          <button class="btn" @click="saveEdit(item.id)">保存</button>
+          <button class="btn btn-ghost" @click="cancelEdit">取消</button>
+        </div>
+      </template>
+    </article>
+
+    <!-- 分页 -->
+    <div class="pagination-row" v-if="totalPages > 1">
+      <button class="btn btn-ghost" @click="prevPage" :disabled="filters.page<=1">← 上一页</button>
+      <span class="page-info">第{{ filters.page }} 页 / 共 {{ totalPages }} 页</span>
+      <button class="btn btn-ghost" @click="nextPage" :disabled="filters.page>=totalPages">下一页 →</button>
+    </div>
+
+  </section>
+
+</div>
+
+<script>
+const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+createApp({
+  setup() {
+    const apiBase = window.location.hostname === "localhost" ? "http://127.0.0.1:8000" : "";
+
+    const activeTab       = ref("today");
+    const reminder        = ref(null);
+    const savingRecord    = ref(false);
+    const saveHint        = ref("");
+    const feedbackHint    = ref("");
+    const extractCandidate = ref(null);
+    const candidateTagsText = ref("");
+    const debounceTimer   = ref(null);
+    const extractPollingTimer = ref(null);
+
+    // Post-it color cycle for experience cards
+    const pitColors = ["pit-yellow","pit-blue","pit-green","pit-orange","pit-pink","pit-purple"];
+
+    const today = new Date().toISOString().slice(0, 10);
+    const recordForm = reactive({ date: today, today_events: "", tomorrow_plan: "" });
+
+    const filters = reactive({ keyword: "", category: "", page: 1, page_size: 10 });
+        const experiences = ref([]);
+    const total = ref(0);
+
+    // 从已加载的经验中提取去重分类列表，用于下拉选项
+    const categoryOptions = computed(() => {
+      const cats = experiences.value
+        .map(e => e.category)
+        .filter(Boolean);
+      return [...new Set(cats)].sort();
+    });
+
+    const newExperience = reactive({ title: "", content: "", category: "", tags: "" });
+    const showCreateForm = ref(false);
+
+    const editingId = ref(null);
+    const editForm  = reactive({ title: "", content: "", category: "", tags: "" });
+
+    const totalPages = computed(() => {
+      const p = Math.ceil(total.value / filters.page_size);
+      return p > 0 ? p : 1;
+    });
+
+    async function request(path, method = "GET", body = null) {
+      const options = { method, headers: { "Content-Type": "application/json" } };
+      if (body) options.body = JSON.stringify(body);
+      const resp = await fetch(`${apiBase}${path}`, options);
+      if (!resp.ok) { const t = await resp.text(); throw new Error(t || "请求失败"); }
+      return resp.json();
+    }
+
+        function onSceneInput(scene) {
+      feedbackHint.value = "";
+      if (debounceTimer.value) clearTimeout(debounceTimer.value);
+      debounceTimer.value = setTimeout(async () => {
+        const content = scene === "today_events" ? recordForm.today_events : recordForm.tomorrow_plan;
+        if (!content.trim() || content.trim().length < 4) { reminder.value = null; return; }
+        try {
+          const result = await request("/api/reminder", "POST", { content, scene });
+          reminder.value = result.data.matched ? result.data : null;
+        } catch { reminder.value = null; }
+      }, 1500);
+    }
+
+        async function saveRecord() {
+      savingRecord.value = true;
+      saveHint.value = "";
+      try {
+        const result = await request("/api/records", "POST", {
+          date: recordForm.date,
+          today_events: recordForm.today_events,
+          tomorrow_plan: recordForm.tomorrow_plan,
+        });
+                        saveHint.value = "已保存，正在后台提炼经验...";
+        const record = result.data.record;
+        if (record && record.id) startExtractPolling(record.id);
+      } catch (e) {
+        saveHint.value = `保存失败：${e.message}`;
+      } finally {
+        savingRecord.value = false;
+      }
+    }
+
+    function stopExtractPolling() {
+      if (extractPollingTimer.value) { clearInterval(extractPollingTimer.value); extractPollingTimer.value = null; }
+    }
+
+    function startExtractPolling(recordId) {
+      stopExtractPolling();
+      let attempts = 0;
+      const maxAttempts = 20;
+      extractPollingTimer.value = setInterval(async () => {
+        attempts++;
+        try {
+          const result = await request(`/api/records/${recordId}/extract-status`);
+          const data = result.data || {};
+          if (data.status === "completed") {
+            stopExtractPolling();
+            if (data.has_candidate && data.candidate) {
+              extractCandidate.value = data.candidate;
+              candidateTagsText.value = (extractCandidate.value.tags || []).join("，");
+              saveHint.value = "已保存，并生成1条经验候选";
+            } else {
+              extractCandidate.value = null;
+              saveHint.value = "已保存，本次未提炼出经验候选";
+            }
+            return;
+          }
+          if (data.status === "failed") {
+            stopExtractPolling();
+            saveHint.value = "已保存，经验提炼失败";
+            return;
+          }
+        } catch (e) {
+          if (attempts >= maxAttempts) { stopExtractPolling(); saveHint.value = "已保存，提炼状态查询超时"; }
+          return;
+        }
+        if (attempts >= maxAttempts) { stopExtractPolling(); saveHint.value = "已保存，提炼处理中（可稍后刷新查看）"; }
+      }, 800);
+    }
+
+    async function confirmExtractedCandidate() {
+      if (!extractCandidate.value) return;
+      const payload = {
+        title: extractCandidate.value.title || "",
+        content: extractCandidate.value.content || "",
+        category: extractCandidate.value.category || "",
+        tags: candidateTagsText.value.split("，").map(s => s.trim()).filter(Boolean),
+        source: "extracted",
+        source_record_id: extractCandidate.value.source_record_id || null,
+      };
+      if (!payload.title || !payload.content) return;
+      try {
+        await request("/api/experiences", "POST", payload);
+        extractCandidate.value = null;
+        candidateTagsText.value = "";
+        if (activeTab.value === "library") loadExperiences();
+            } catch (e) { console.error(e); }
+    }
+
+    async function markFeedback(useful) {
+      if (!reminder.value?.experiences?.length) return;
+      const experienceId = reminder.value.experiences[0].id;
+      const content = `${recordForm.today_events}\n${recordForm.tomorrow_plan}`.trim();
+      try {
+        await request("/api/reminder/feedback", "POST", { experience_id: experienceId, scene_content: content, useful });
+        feedbackHint.value = "反馈已记录";
+      } catch { feedbackHint.value = "反馈失败"; }
+    }
+
+    function toggleCreateForm() { showCreateForm.value = !showCreateForm.value; }
+
+    async function enterLibraryTab() {
+      activeTab.value = "library";
+      showCreateForm.value = false;
+      await loadExperiences();
+    }
+
+    async function loadExperiences() {
+      const params = new URLSearchParams({
+        keyword: filters.keyword, category: filters.category,
+        page: String(filters.page), page_size: String(filters.page_size),
+      });
+      try {
+        const result = await request(`/api/experiences?${params}`);
+        experiences.value = result.data.items || [];
+        total.value = result.data.total || 0;
+      } catch {}
+    }
+
+    async function reloadExperiences() { filters.page = 1; await loadExperiences(); }
+
+    async function createManualExperience() {
+      const payload = {
+        title: newExperience.title.trim(),
+        content: newExperience.content.trim(),
+        category: newExperience.category.trim(),
+        tags: newExperience.tags.split("，").map(s => s.trim()).filter(Boolean),
+        source: "manual",
+      };
+      if (!payload.title || !payload.content) return;
+      try {
+        await request("/api/experiences", "POST", payload);
+        Object.assign(newExperience, { title:"", content:"", category:"", tags:"" });
+        showCreateForm.value = false;
+        filters.page = 1;
+        await loadExperiences();
+      } catch {}
+    }
+
+    function startEdit(item) {
+      editingId.value = item.id;
+      editForm.title= item.title    || "";
+      editForm.content  = item.content  || "";
+      editForm.category = item.category || "";
+      editForm.tags     = (item.tags || []).join("，");
+    }
+    function cancelEdit() { editingId.value = null; }
+
+    async function saveEdit(experienceId) {
+      const payload = {
+        title: editForm.title.trim(), content: editForm.content.trim(),
+        category: editForm.category.trim(),
+        tags: editForm.tags.split("，").map(s => s.trim()).filter(Boolean),
+      };
+      if (!payload.title || !payload.content) return;
+      try {
+        await request(`/api/experiences/${experienceId}`, "PUT", payload);
+        editingId.value = null;
+        await loadExperiences();
+      } catch {}
+    }
+
+    async function deleteExperience(experienceId) {
+      if (!confirm("确认删除这条经验吗？")) return;
+      try {
+        await request(`/api/experiences/${experienceId}`, "DELETE");
+        await loadExperiences();
+      } catch {}
+    }
+
+    async function prevPage() { if (filters.page > 1) { filters.page--; await loadExperiences(); } }
+    async function nextPage() { if (filters.page < totalPages.value) { filters.page++; await loadExperiences(); } }
+
+    onMounted(() => { loadExperiences(); });
+
+    return {
+      activeTab, recordForm, savingRecord, saveHint, reminder, feedbackHint,
+      extractCandidate, candidateTagsText, filters, experiences, totalPages,
+      newExperience, showCreateForm, editingId, editForm, pitColors, categoryOptions,
+      onSceneInput, saveRecord, confirmExtractedCandidate, markFeedback,
+      enterLibraryTab, loadExperiences, reloadExperiences, toggleCreateForm,
+      createManualExperience, startEdit, cancelEdit, saveEdit, deleteExperience,
+      prevPage, nextPage,
+    };
+  }
+}).mount("#app");
+</script>
+</body>
+</html>
