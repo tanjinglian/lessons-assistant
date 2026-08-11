@@ -145,6 +145,10 @@ body {
   background: linear-gradient(135deg, var(--blue), var(--blue-deep));
   transform: rotate(-1.5deg);
 }
+.tab-btn:nth-child(2) {
+  background: linear-gradient(135deg, var(--orange), #ffb347);
+  transform: rotate(0.8deg);
+}
 .tab-btn:last-child {
   background: linear-gradient(135deg, var(--green), var(--green-deep));
   transform: rotate(1.2deg);
@@ -438,6 +442,34 @@ textarea:focus { border-color: var(--ink); }
   to   { opacity: 1; }
 }
 
+/* ── CALENDAR ── */
+.calendar-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+  margin-top: 16px;
+}
+.cal-header {
+  text-align: center; font-family: var(--font-script); font-size: 13px;
+  font-weight: 600; color: var(--ink-lt); padding: 8px 0;
+  letter-spacing: 0.1em;
+}
+.cal-cell {
+  position: relative; text-align: center; padding: 12px 4px;
+  border-radius: 4px; cursor: default; transition: background 0.12s;
+  min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.cal-cell.has-record { cursor: pointer; background: rgba(255,224,102,0.35); }
+.cal-cell.has-record:hover { background: rgba(255,224,102,0.6); transform: scale(1.05); }
+.cal-cell.is-today .cal-day {
+  background: var(--ink); color: #fff; border-radius: 50%;
+  width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+}
+.cal-cell.other-month .cal-day { opacity: 0.3; }
+.cal-day { font-family: var(--font-body); font-size: 14px; font-weight: 500; }
+.cal-dot {
+  position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%);
+  width: 6px; height: 6px; border-radius: 50%; background: #c92a2a;
+}
+
 /* ── RESPONSIVE ── */
 @media (max-width: 900px) {
   .two-col, .two-pit-grid { grid-template-columns: 1fr; }
@@ -475,6 +507,8 @@ textarea:focus { border-color: var(--ink); }
   <nav class="tabs-row" aria-label="主导航">
     <button :class="['tab-btn', activeTab==='today' ? 'active' : '']"
             @click="activeTab='today'">今日记录</button>
+    <button :class="['tab-btn', activeTab==='journal' ? 'active' : '']"
+            @click="enterJournalTab">工作日志</button>
     <button :class="['tab-btn', activeTab==='library' ? 'active' : '']"
             @click="enterLibraryTab">经验库</button>
   </nav>
@@ -566,6 +600,66 @@ textarea:focus { border-color: var(--ink); }
         <button class="btn btn-ghost" @click="extractCandidate=null">忽略</button>
       </div>
     </article>
+
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       JOURNAL TAB - 工作日志月历
+  ══════════════════════════════════════════ -->
+  <section v-if="activeTab==='journal'" class="sheet" aria-label="工作日志">
+
+    <div class="section-head-row">
+      <div>
+        <span class="section-eyebrow">Work Journal</span>
+        <h2 class="section-title">工作日志</h2>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:18px;">
+        <button class="btn btn-ghost" @click="prevMonth">← 上月</button>
+        <span class="date-sticky" style="transform:none;font-size:16px;">{{ calYear }}年{{ calMonth }}月</span>
+        <button class="btn btn-ghost" @click="nextMonth">下月 →</button>
+      </div>
+    </div>
+
+    <!-- 月历网格 -->
+    <div class="calendar-grid">
+      <div class="cal-header" v-for="d in ['一','二','三','四','五','六','日']" :key="d">{{ d }}</div>
+      <div
+        class="cal-cell"
+        v-for="(cell, idx) in calendarCells"
+        :key="idx"
+        :class="{ 'has-record': cell.hasRecord, 'is-today': cell.isToday, 'other-month': !cell.currentMonth }"
+        @click="cell.hasRecord && viewDayRecords(cell.date)"
+      >
+        <span class="cal-day">{{ cell.day }}</span>
+        <span class="cal-dot" v-if="cell.hasRecord"></span>
+      </div>
+    </div>
+
+    <!-- 选中日期的记录 -->
+    <div v-if="selectedDayRecords.length" style="margin-top:28px;">
+      <h3 style="font-family:var(--font-display);font-size:20px;margin-bottom:16px;">
+        📋 {{ selectedDate }} 的记录
+      </h3>
+      <article
+        class="note-card pit-yellow tape"
+        v-for="rec in selectedDayRecords"
+        :key="rec.id"
+        style="margin-bottom:16px;"
+      >
+        <div class="card-body" style="white-space:pre-wrap;">
+          <p v-if="rec.scene"><strong>发生的事：</strong>{{ rec.scene }}</p>
+          <p v-if="rec.handling" style="margin-top:8px;"><strong>处理方式：</strong>{{ rec.handling }}</p>
+          <p v-if="rec.result" style="margin-top:8px;"><strong>结果：</strong>{{ rec.result }}</p>
+          <p v-if="rec.reflection" style="margin-top:8px;"><strong>规划/反思：</strong>{{ rec.reflection }}</p>
+        </div>
+      </article>
+    </div>
+
+    <!-- 空状态 -->
+    <div class="empty-state" v-if="!journalRecords.length && !journalLoading" style="margin-top:20px;">
+      <p class="empty-title">本月还没有记录</p>
+      <p class="empty-sub">去「今日记录」Tab 写下今天的经历吧 ✍️</p>
+    </div>
 
   </section>
 
@@ -749,6 +843,14 @@ createApp({
     const ragAnswer = ref("");
     const ragResults = ref([]);
 
+    // 工作日志月历状态
+    const calYear = ref(new Date().getFullYear());
+    const calMonth = ref(new Date().getMonth() + 1);
+    const journalRecords = ref([]);
+    const journalLoading = ref(false);
+    const selectedDate = ref("");
+    const selectedDayRecords = ref([]);
+
     const editingId = ref(null);
     const editForm  = reactive({ title: "", content: "", category: "", tags: "" });
 
@@ -847,8 +949,6 @@ createApp({
         content: extractCandidate.value.content || "",
         category: extractCandidate.value.category || "",
         tags: candidateTagsText.value || "",
-        source: "extracted",
-        source_record_id: extractCandidate.value.source_record_id || null,
       };
       if (!payload.title || !payload.content) return;
       try {
@@ -884,8 +984,13 @@ createApp({
       });
       try {
         const result = await request(`/api/experiences?${params}`);
-        experiences.value = result.items || result.data?.items || [];
-        total.value = result.total || result.data?.total || 0;
+        experiences.value = result.experiences || result.items || [];
+        total.value = result.total || 0;
+        // tags 可能是逗号分隔字符串，统一转为数组方便渲染
+        experiences.value = experiences.value.map(e => ({
+          ...e,
+          tags: Array.isArray(e.tags) ? e.tags : (e.tags ? e.tags.split(',').map(t=>t.trim()).filter(Boolean) : [])
+        }));
       } catch {}
     }
 
@@ -908,13 +1013,79 @@ createApp({
       }
     }
 
+    // ─── 工作日志月历 ───
+    const calendarCells = computed(() => {
+      const y = calYear.value, m = calMonth.value;
+      const firstDay = new Date(y, m - 1, 1).getDay(); // 0=Sun
+      const daysInMonth = new Date(y, m, 0).getDate();
+      const startOffset = firstDay === 0 ? 6 : firstDay - 1; // 周一起
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const recordDates = new Set(journalRecords.value.map(r => r.record_date));
+      
+      const cells = [];
+      // 上月补位
+      const prevMonthDays = new Date(y, m - 1, 0).getDate();
+      for (let i = startOffset - 1; i >= 0; i--) {
+        const day = prevMonthDays - i;
+        cells.push({ day, date: '', currentMonth: false, hasRecord: false, isToday: false });
+      }
+      // 本月
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        cells.push({
+          day: d, date: dateStr, currentMonth: true,
+          hasRecord: recordDates.has(dateStr),
+          isToday: dateStr === todayStr,
+        });
+      }
+      // 下月补位到满行
+      const remaining = 7 - (cells.length % 7);
+      if (remaining < 7) {
+        for (let d = 1; d <= remaining; d++) {
+          cells.push({ day: d, date: '', currentMonth: false, hasRecord: false, isToday: false });
+        }
+      }
+      return cells;
+    });
+
+    async function loadJournalRecords() {
+      journalLoading.value = true;
+      selectedDayRecords.value = [];
+      selectedDate.value = "";
+      try {
+        const result = await request(`/api/records?year=${calYear.value}&month=${calMonth.value}`);
+        journalRecords.value = result.records || [];
+      } catch { journalRecords.value = []; }
+      finally { journalLoading.value = false; }
+    }
+
+    function viewDayRecords(dateStr) {
+      selectedDate.value = dateStr;
+      selectedDayRecords.value = journalRecords.value.filter(r => r.record_date === dateStr);
+    }
+
+    function prevMonth() {
+      if (calMonth.value === 1) { calMonth.value = 12; calYear.value--; }
+      else { calMonth.value--; }
+      loadJournalRecords();
+    }
+    function nextMonth() {
+      if (calMonth.value === 12) { calMonth.value = 1; calYear.value++; }
+      else { calMonth.value++; }
+      loadJournalRecords();
+    }
+
+    async function enterJournalTab() {
+      activeTab.value = "journal";
+      await loadJournalRecords();
+    }
+
     async function createManualExperience() {
       const payload = {
         title: newExperience.title.trim(),
         content: newExperience.content.trim(),
         category: newExperience.category.trim(),
-        tags: newExperience.tags.split("，").map(s => s.trim()).filter(Boolean),
-        source: "manual",
+        tags: newExperience.tags.trim(),
       };
       if (!payload.title || !payload.content) return;
       try {
@@ -939,7 +1110,7 @@ createApp({
       const payload = {
         title: editForm.title.trim(), content: editForm.content.trim(),
         category: editForm.category.trim(),
-        tags: editForm.tags.split("，").map(s => s.trim()).filter(Boolean),
+        tags: editForm.tags.trim(),
       };
       if (!payload.title || !payload.content) return;
       try {
@@ -967,10 +1138,13 @@ createApp({
       extractCandidate, candidateTagsText, filters, experiences, totalPages,
       newExperience, showCreateForm, editingId, editForm, pitColors, categoryOptions,
       ragSearching, ragAnswer, ragResults,
+      calYear, calMonth, calendarCells, journalRecords, journalLoading,
+      selectedDate, selectedDayRecords,
       onSceneInput, saveRecord, confirmExtractedCandidate, markFeedback,
-      enterLibraryTab, loadExperiences, reloadExperiences, ragSearch, toggleCreateForm,
-      createManualExperience, startEdit, cancelEdit, saveEdit, deleteExperience,
-      prevPage, nextPage,
+      enterLibraryTab, enterJournalTab, loadExperiences, reloadExperiences, ragSearch,
+      toggleCreateForm, createManualExperience, startEdit, cancelEdit, saveEdit,
+      deleteExperience, prevPage, nextPage,
+      loadJournalRecords, viewDayRecords, prevMonth, nextMonth,
     };
   }
 }).mount("#app");

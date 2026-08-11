@@ -395,5 +395,58 @@ async def analyze_record(record: RecordCreate):
     
     return result
 
+# ---------- 智能提醒（输入时实时匹配）----------
+class ReminderRequest(BaseModel):
+    content: str
+    scene: Optional[str] = ""
+
+@app.post("/api/reminder")
+async def smart_reminder(req: ReminderRequest):
+    """根据用户正在输入的内容，实时匹配相关经验并生成提醒"""
+    text = req.content.strip()
+    if not text or len(text) < 4:
+        return {"matched": False}
+    
+    if not ZHIPU_API_KEY:
+        return {"matched": False}
+    
+    try:
+        embedding = await get_embedding(text)
+        matches = await supabase_rpc("match_experiences", {
+            "query_embedding": embedding,
+            "match_threshold": 0.5,
+            "match_count": 3,
+        })
+        if not matches:
+            return {"matched": False}
+        
+        # 构建提醒文案
+        exp_titles = [m["title"] for m in matches[:3]]
+        reminder_text = f"你之前记录过相关经验：{'、'.join(exp_titles)}。可以参考一下。"
+        
+        # 如果有 DeepSeek，生成更智能的提醒
+        if DEEPSEEK_API_KEY and len(matches) > 0:
+            context = "\n".join([f"- {m['title']}: {m.get('content','')[:100]}" for m in matches[:3]])
+            system_prompt = "你是职场经验助手。用户正在记录工作，你需要根据匹配到的历史经验，用一两句话给出简短实用的提醒。不要重复经验原文，只给出关键提醒。"
+            user_prompt = f"用户正在写：{text}\n\n匹配到的经验：\n{context}"
+            try:
+                reminder_text = await call_deepseek(system_prompt, user_prompt)
+            except Exception:
+                pass
+        
+        return {
+            "matched": True,
+            "reminder": reminder_text,
+            "experiences": [{"id": m.get("id"), "title": m["title"]} for m in matches[:3]],
+        }
+    except Exception:
+        return {"matched": False}
+
+@app.post("/api/reminder/feedback")
+async def reminder_feedback(data: dict):
+    """记录智能提醒反馈（简单记录，后续可用于优化）"""
+    # 目前只返回成功，后续可存入 Supabase
+    return {"success": True}
+
 # ============ Vercel 入口 ============
 # Vercel Python Runtime 自动检测 app变量
