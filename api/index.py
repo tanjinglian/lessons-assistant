@@ -112,9 +112,14 @@ async def call_deepseek(system_prompt: str, user_prompt: str) -> str:
 
 # ============ 数据模型 ============
 class RecordCreate(BaseModel):
-    scene: str
-    handling: str
-    result: str
+    # 兼容前端 v5 格式（today_events/tomorrow_plan/date）
+    today_events: Optional[str] = ""
+    tomorrow_plan: Optional[str] = ""
+    date: Optional[str] = None
+    # 也兼容新格式（scene/handling/result/record_date）
+    scene: Optional[str] = ""
+    handling: Optional[str] = ""
+    result: Optional[str] = ""
     reflection: Optional[str] = ""
     record_date: Optional[str] = None
 
@@ -142,14 +147,19 @@ def health():
 # ---------- 每日记录 ----------
 @app.post("/api/records")
 async def save_record(record: RecordCreate):
-    """保存每日记录"""
-    record_date = record.record_date or date.today().isoformat()
+    """保存每日记录，兼容前端 v5 格式和新格式"""
+    # 字段适配：前端发 today_events/tomorrow_plan/date，数据库存 scene/handling/result/record_date
+    scene = record.scene or record.today_events or ""
+    handling = record.handling or ""
+    result_text = record.result or ""
+    reflection = record.reflection or record.tomorrow_plan or ""
+    record_date = record.record_date or record.date or date.today().isoformat()
     
     data = {
-        "scene": record.scene,
-        "handling": record.handling,
-        "result": record.result,
-        "reflection": record.reflection or "",
+        "scene": scene,
+        "handling": handling,
+        "result": result_text,
+        "reflection": reflection,
         "record_date": record_date,
         "created_at": datetime.now().isoformat(),
     }
@@ -157,18 +167,20 @@ async def save_record(record: RecordCreate):
     result = await supabase_request("POST", "daily_records", body=data)
     record_id = result[0]["id"] if result else None
     
-    # 异步提炼经验（简化为同步，Serverless 限制）
+    # 同步提炼经验（Serverless 限制）
     extract_result = None
-    if DEEPSEEK_API_KEY:
+    if DEEPSEEK_API_KEY and scene:
         system_prompt = """你是一位职场经验提炼专家。根据用户的工作记录，提炼出可复用的经验教训。
 输出JSON格式：{"title": "经验标题", "content": "详细经验内容", "category": "分类", "tags": "标签1,标签2"}
 分类只能从以下选取：沟通协作、技术决策、项目管理、职场人际、自我管理"""
         
-        user_prompt = f"场景：{record.scene}\n处理方式：{record.handling}\n结果：{record.result}\n反思：{record.reflection}"
+        user_prompt = f"今日记录：{scene}\n明日计划：{reflection}"
+        if handling:
+            user_prompt = f"场景：{scene}\n处理方式：{handling}\n结果：{result_text}\n反思：{reflection}"
         
         try:
             ai_response = await call_deepseek(system_prompt, user_prompt)
-            #尝试解析 JSON
+            # 尝试解析 JSON
             ai_response_clean = ai_response.strip()
             if ai_response_clean.startswith("```"):
                 ai_response_clean = ai_response_clean.split("\n", 1)[1].rsplit("```", 1)[0]
@@ -179,6 +191,7 @@ async def save_record(record: RecordCreate):
     return {
         "success": True,
         "id": record_id,
+        "record": {"id": record_id, "record_date": record_date},
         "extract_candidate": extract_result,
     }
 

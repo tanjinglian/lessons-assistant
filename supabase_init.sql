@@ -9,9 +9,9 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- 2. 每日记录表
 CREATE TABLE IF NOT EXISTS daily_records (
     id BIGSERIAL PRIMARY KEY,
-    scene TEXT NOT NULL,
-    handling TEXT NOT NULL,
-    result TEXT NOT NULL,
+    scene TEXT NOT NULL DEFAULT '',
+    handling TEXT NOT NULL DEFAULT '',
+    result TEXT NOT NULL DEFAULT '',
     reflection TEXT DEFAULT '',
     record_date DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at TIMESTAMPTZ DEFAULT NOW()
