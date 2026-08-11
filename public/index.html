@@ -895,6 +895,9 @@ createApp({
         if (result.extract_candidate) {
           extractCandidate.value = result.extract_candidate;
           extractCandidate.value.source_record_id = result.id;
+          // tags 后端返回逗号分隔字符串，转为中文逗号展示
+          const rawTags = extractCandidate.value.tags || "";
+          candidateTagsText.value = typeof rawTags === "string" ? rawTags.replace(/,/g, "，") : rawTags.join("，");
           saveHint.value = "已保存，AI 已提炼出经验建议 ↓";
         }
       } catch (e) {
@@ -921,7 +924,8 @@ createApp({
             stopExtractPolling();
             if (data.has_candidate && data.candidate) {
               extractCandidate.value = data.candidate;
-              candidateTagsText.value = (extractCandidate.value.tags || []).join("，");
+              const t = extractCandidate.value.tags || "";
+              candidateTagsText.value = typeof t === "string" ? t.replace(/,/g, "，") : t.join("，");
               saveHint.value = "已保存，并生成1条经验候选";
             } else {
               extractCandidate.value = null;
