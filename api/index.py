@@ -142,6 +142,9 @@ def health():
         "version": "vercel-rag-v1",
         "rag_enabled": bool(ZHIPU_API_KEY and SUPABASE_URL),
         "llm_enabled": bool(DEEPSEEK_API_KEY),
+        "deepseek_key_length": len(DEEPSEEK_API_KEY),
+        "deepseek_key_prefix": DEEPSEEK_API_KEY[:8] + "..." if len(DEEPSEEK_API_KEY) > 8 else "(empty)",
+        "all_env_keys_with_deep": [k for k in os.environ.keys() if "DEEP" in k.upper() or "deep" in k.lower()],
     }
 
 # ---------- 每日记录 ----------
