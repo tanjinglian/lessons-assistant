@@ -1,6 +1,6 @@
 """
 前事鉴 - Vercel Serverless Backend (RAG 版)
-使用 SiliconFlow Embedding API + Supabase pgvector 实现完整 RAG
+使用智谱 AI Embedding API + Supabase pgvector 实现完整 RAG
 """
 import os
 import json
@@ -26,9 +26,9 @@ DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.co
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-SILICONFLOW_API_KEY = os.environ.get("SILICONFLOW_API_KEY", "")
-SILICONFLOW_BASE_URL = os.environ.get("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
+ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY", "")
+ZHIPU_BASE_URL = os.environ.get("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "embedding-3")
 
 # ============ Supabase 客户端辅助 ============
 def supabase_headers():
@@ -59,23 +59,22 @@ async def supabase_rpc(fn_name: str, body: dict):
             raise HTTPException(status_code=resp.status_code, detail=f"Supabase RPC error: {resp.text}")
         return resp.json()
 
-# ============ Embedding API============
+# ============ Embedding API ============
 async def get_embedding(text: str) -> List[float]:
-    """调用 SiliconFlow Embedding API 获取文本向量"""
-    if not SILICONFLOW_API_KEY:
-        raise HTTPException(status_code=500, detail="SILICONFLOW_API_KEY not configured")
+    """调用智谱 AI Embedding API 获取文本向量（embedding-3, 2048维）"""
+    if not ZHIPU_API_KEY:
+        raise HTTPException(status_code=500, detail="ZHIPU_API_KEY not configured")
     
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            f"{SILICONFLOW_BASE_URL}/embeddings",
+            f"{ZHIPU_BASE_URL}/embeddings",
             headers={
-                "Authorization": f"Bearer {SILICONFLOW_API_KEY}",
+                "Authorization": f"Bearer {ZHIPU_API_KEY}",
                 "Content-Type": "application/json",
             },
             json={
                 "model": EMBEDDING_MODEL,
                 "input": text,
-                "encoding_format": "float",
             }
         )
         if resp.status_code != 200:
@@ -136,7 +135,7 @@ def health():
     return {
         "status": "ok",
         "version": "vercel-rag-v1",
-        "rag_enabled": bool(SILICONFLOW_API_KEY and SUPABASE_URL),
+        "rag_enabled": bool(ZHIPU_API_KEY and SUPABASE_URL),
         "llm_enabled": bool(DEEPSEEK_API_KEY),
     }
 
@@ -255,7 +254,7 @@ async def create_experience(exp: ExperienceCreate):
     }
     
     # 生成 Embedding 向量
-    if SILICONFLOW_API_KEY:
+    if ZHIPU_API_KEY:
         try:
             text_for_embedding = f"{exp.title} {exp.content}"
             embedding = await get_embedding(text_for_embedding)
@@ -278,7 +277,7 @@ async def update_experience(exp_id: int, exp: ExperienceCreate):
     }
     
     # 重新生成向量
-    if SILICONFLOW_API_KEY:
+    if ZHIPU_API_KEY:
         try:
             text_for_embedding = f"{exp.title} {exp.content}"
             embedding = await get_embedding(text_for_embedding)
@@ -304,8 +303,8 @@ async def rag_search(query: SearchQuery):
     2. 在 Supabase pgvector 中做相似度检索
     3. 把检索结果喂给 DeepSeek 生成综合建议
     """
-    if not SILICONFLOW_API_KEY:
-        raise HTTPException(status_code=500, detail="未配置 SiliconFlow API Key，无法使用语义搜索")
+    if not ZHIPU_API_KEY:
+        raise HTTPException(status_code=500, detail="未配置智谱 AI API Key，无法使用语义搜索")
     
     # Step 1: 生成查询向量
     query_embedding = await get_embedding(query.query)
@@ -364,7 +363,7 @@ async def analyze_record(record: RecordCreate):
     
     result = {"type": "none", "message": ""}
     
-    if SILICONFLOW_API_KEY:
+    if ZHIPU_API_KEY:
         try:
             embedding = await get_embedding(text)
             matches = await supabase_rpc("match_experiences", {

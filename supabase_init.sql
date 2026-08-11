@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS experiences (
     content TEXT NOT NULL,
     category TEXT DEFAULT '',
     tags TEXT DEFAULT '',
-    embedding vector(1024),-- bge-m3 输出1024 维向量
+    embedding vector(2048),-- 智谱 embedding-3 输出 2048 维向量
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -36,7 +36,7 @@ WITH (lists = 10);
 
 -- 5. 向量相似度搜索函数
 CREATE OR REPLACE FUNCTION match_experiences(
-    query_embedding vector(1024),
+    query_embedding vector(2048),
     match_threshold FLOAT DEFAULT 0.3,
     match_count INT DEFAULT 5
 )

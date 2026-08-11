@@ -1,135 +1,86 @@
-# 前事鉴 Vercel 部署指南（RAG 完整版）
+# 前事鉴 Vercel 部署指南（RAG 版）
 
->技术栈：FastAPI Serverless + SiliconFlow Embedding + Supabase pgvector + DeepSeek LLM
+## 架构说明
 
----
-
-## 你需要准备的账号/API Key
-
-| 服务 | 作用 | 注册地址 | 费用 |
-|------|------|---------|------|
-| **Vercel** | 应用托管 | https://vercel.com | 免费 |
-| **Supabase** | 数据库 + 向量存储 | https://supabase.com | 免费（500MB） |
-| **硅基流动 SiliconFlow** | 文本转向量（Embedding） | https://cloud.siliconflow.cn | 免费额度充足 |
-| **DeepSeek** | LLM 经验提炼 + RAG 生成回答 | https://platform.deepseek.com | 按量付费，极低 |
+- **前端**：静态 HTML，Vercel 自动托管（`public/index.html`）
+- **后端**：Python Serverless Function（`api/index.py`）
+- **数据库**：Supabase（PostgreSQL + pgvector 向量检索）
+- **Embedding**：智谱 AI `embedding-3`（2048 维向量）
+- **LLM**：DeepSeek `deepseek-chat`（经验提炼 + RAG 回答）
 
 ---
 
-## 第一步：配置 Supabase 数据库
+## 部署步骤
 
-1. 注册 [supabase.com](https://supabase.com) 并登录
-2. 点击 **New Project** → 设置：
-   - Name: `pitfall-assistant`
-   - Database Password: 记住这个密码
-   - Region: 选 `Northeast Asia (Tokyo)` 或 `Southeast Asia (Singapore)`
+### 第 1 步：配置 Supabase（数据库）
+
+1. 打开 https://supabase.com → 注册/登录
+2. **New Project** → 填写名称、数据库密码、选区域
 3. 等待项目创建完成（约 1 分钟）
-4. 进入项目 → 左侧菜单点**SQL Editor**
-5. 把`supabase_init.sql` 的全部内容粘贴进去 → 点 **Run**
+4. 进入项目 → 左侧 **SQL Editor** → 新建查询
+5. 把 `supabase_init.sql` 文件的全部内容粘贴进去 → 点 **Run**
 6. 进入 **Settings → API**，复制：
    - `Project URL`（如 `https://xxxxx.supabase.co`）
    - `anon public` Key（以 `eyJ` 开头的长字符串）
 
----
+### 第 2 步：获取智谱 AI API Key
 
-## 第二步：获取 SiliconFlow API Key
+1. 打开 https://open.bigmodel.cn → 登录
+2. 进入控制台 → **API Keys** → **创建 API Key**
+3. 复制密钥（格式如 `xxxxxxxx.yyyyyyyy`）
 
-1. 注册 [cloud.siliconflow.cn](https://cloud.siliconflow.cn)
-2. 进入控制台 → **API 密钥** → **新建 API 密钥**
-3. 复制生成的 Key（以 `sk-` 开头）
+### 第 3 步：获取 DeepSeek API Key（如已有可跳过）
 
----
+1. 打开 https://platform.deepseek.com → 登录
+2. **API Keys** → 创建 → 复制
 
-## 第三步：获取 DeepSeek API Key
+### 第 4 步：在 Vercel 配置环境变量
 
-1. 注册 [platform.deepseek.com](https://platform.deepseek.com)
-2. 进入控制台 → **API Keys** → **Create new key**
-3. 复制生成的 Key
+1. 打开 Vercel Dashboard → 你的项目 → **Settings** → **Environment Variables**
+2. 添加以下变量：
 
----
+| Key | Value |
+|-----|-------|
+| `ZHIPU_API_KEY` | 智谱 AI 的 API Key |
+| `DEEPSEEK_API_KEY` | DeepSeek 的 API Key |
+| `SUPABASE_URL` | Supabase 的 Project URL |
+| `SUPABASE_KEY` | Supabase 的 anon public key |
 
-## 第四步：推代码到 GitHub
+3. 点 Save
 
-```bash
-cd app_vercel
-git add .
-git commit -m "feat: RAG version with SiliconFlow + Supabase pgvector"
-git push
-```
+### 第 5 步：重新部署
 
----
+配置完环境变量后，进入 **Deployments** 页面 → 点最新一次部署右侧 **⋯** → **Redeploy**
 
-## 第五步：在 Vercel 配置环境变量
-
-1. 打开 [Vercel Dashboard](https://vercel.com) → 你的项目
-2. 进入 **Settings → Environment Variables**
-3. 添加以下变量：
-
-```
-DEEPSEEK_API_KEY=sk-你的deepseek密钥
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
-SUPABASE_URL=https://你的项目.supabase.co
-SUPABASE_KEY=eyJ你的anon_key...
-SILICONFLOW_API_KEY=sk-你的硅基流动密钥
-SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
-EMBEDDING_MODEL=BAAI/bge-m3
-```
-
-4. 点Save 保存
+等待 30-60 秒部署完成即可。
 
 ---
 
-## 第六步：重新部署
+## 验证
 
-环境变量修改后需要重新部署：
--进入 **Deployments** → 点最新一条→ **⋮** → **Redeploy**
-- 或者推一次新commit，Vercel 会自动重新部署
-
----
-
-## 完成 ✅
-
-访问你的 Vercel 地址（如 `https://lessons-assistant.vercel.app`），即可：
-
-1. **记录经验** → 保存后自动调DeepSeek 提炼
-2. **确认经验** → 存入 Supabase +生成向量
-3. **语义搜索** → 向量检索 + LLM 生成建议（完整RAG）
-
----
-
-## 项目架构
-
-```
-用户输入 → Vercel Serverless Function (FastAPI)
-                ├── 保存记录 → Supabase (PostgreSQL)
-                ├── 经验提炼 → DeepSeek Chat API
-                ├── 生成向量 → SiliconFlow Embedding API → Supabase pgvector
-                └── 语义搜索 → SiliconFlow 生成查询向量
-                → Supabase pgvector 相似度检索
-                              → DeepSeek 生成综合建议
-```
+1. 访问 `https://你的项目.vercel.app`
+2. 在「今日记录」中保存一条记录 → 应看到 AI 提炼的经验候选
+3. 确认经验后，在经验库中应能看到
+4. 在「语义搜索」中输入相关词 → 应返回 RAG 回答 + 相似经验来源
 
 ---
 
 ## 常见问题
 
-| 问题 | 解决 |
-|------|------|
-| 搜索返回空| 确认经验库有数据且向量已生成 |
-| "Embedding API error" | 检查 SILICONFLOW_API_KEY 是否正确 |
-| "Supabase error" | 检查 SUPABASE_URL/KEY，确认SQL 已执行 |
-| 保存成功但无提炼 | 检查 DEEPSEEK_API_KEY |
-| 函数超时 | Vercel 免费层限 10s，如果 DeepSeek 响应慢可能触发 |
+| 问题 | 原因 | 解决 |
+|------|------|------|
+| 保存记录报 500 | Supabase 未建表或环境变量错误 | 检查 SQL 是否执行成功、环境变量是否正确 |
+| 语义搜索无结果 | 经验库为空或 Embedding 未生成 | 先添加几条经验，确保 ZHIPU_API_KEY 配置正确 |
+| 10秒超时 | Vercel 免费层函数限制 | 检查 Supabase 响应速度，减少 top_k |
+| pgvector 报错 | SQL 中 CREATE EXTENSION 未执行 | 在 SQL Editor 重新执行 `CREATE EXTENSION IF NOT EXISTS vector;` |
 
 ---
 
-## 简历写法建议
+## 费用
 
-```
-前事鉴 — 职场经验管理与RAG 智能检索系统
-技术栈：FastAPI + Supabase pgvector + SiliconFlow Embedding + DeepSeek LLM
-核心：向量语义检索（bge-m3）+ 检索增强生成（RAG）+ LLM 经验自动提炼
-部署：Vercel Serverless，零运维
-演示：https://lessons-assistant.vercel.app
-源码：https://github.com/xxx/lessons-assistant
-```
+| 服务 | 费用 |
+|------|------|
+| Vercel | 免费（Hobby Plan） |
+| Supabase | 免费（500MB 存储、50万 API 请求/月） |
+| 智谱 AI | 注册赠送 token，简历展示够用 |
+| DeepSeek | 按量计费，极低成本 |
