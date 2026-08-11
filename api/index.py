@@ -21,7 +21,7 @@ app.add_middleware(
 )
 
 # ============ 配置 ============
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "") or os.environ.get("deepseek", "") or os.environ.get("DEEPSEEK_KEY", "")
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
@@ -142,9 +142,6 @@ def health():
         "version": "vercel-rag-v1",
         "rag_enabled": bool(ZHIPU_API_KEY and SUPABASE_URL),
         "llm_enabled": bool(DEEPSEEK_API_KEY),
-        "deepseek_key_length": len(DEEPSEEK_API_KEY),
-        "deepseek_key_prefix": DEEPSEEK_API_KEY[:8] + "..." if len(DEEPSEEK_API_KEY) > 8 else "(empty)",
-        "all_env_keys_with_deep": [k for k in os.environ.keys() if "DEEP" in k.upper() or "deep" in k.lower()],
     }
 
 # ---------- 每日记录 ----------
@@ -173,9 +170,18 @@ async def save_record(record: RecordCreate):
     # 同步提炼经验（Serverless 限制）
     extract_result = None
     if DEEPSEEK_API_KEY and scene:
-        system_prompt = """你是一位职场经验提炼专家。根据用户的工作记录，提炼出可复用的经验教训。
-输出JSON格式：{"title": "经验标题", "content": "详细经验内容", "category": "分类", "tags": "标签1,标签2"}
-分类只能从以下选取：沟通协作、技术决策、项目管理、职场人际、自我管理"""
+        system_prompt = """你是一位职场经验提炼专家。从用户的工作记录中提炼可复用的经验教训。
+
+要求：
+- content 只写具体的经验结论和可操作建议，不要复述事件背景，不要"本次事件中"等叙述
+- 多条经验用分号分隔，每条都是可直接指导行动的结论
+- title 用一句话概括核心教训（10字以内）
+
+输出严格JSON格式：{"title": "经验标题", "content": "经验内容", "category": "分类", "tags": "标签1,标签2"}
+分类只能从以下选取：沟通协作、技术决策、项目管理、职场人际、自我管理
+
+示例输出：
+{"title": "选型要算总账", "content": "技术选型不应只关注效果，还需综合评估成本、稳定性和可维护性；在选型阶段应尽早与开发团队同步，明确量产环境下的资源约束（成本、延迟、并发），基于约束进行方案验证；对于复杂架构（如agent），需评估规模化后的运维复杂度，必要时优先考虑更轻量的workflow方案。", "category": "技术决策", "tags": "技术选型,成本评估"}"""
         
         user_prompt = f"今日记录：{scene}\n明日计划：{reflection}"
         if handling:
