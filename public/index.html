@@ -773,7 +773,7 @@ createApp({
         if (!content.trim() || content.trim().length < 4) { reminder.value = null; return; }
         try {
           const result = await request("/api/reminder", "POST", { content, scene });
-          reminder.value = result.data.matched ? result.data : null;
+          reminder.value = result.matched ? result : null;
         } catch { reminder.value = null; }
       }, 1500);
     }
@@ -787,9 +787,14 @@ createApp({
           today_events: recordForm.today_events,
           tomorrow_plan: recordForm.tomorrow_plan,
         });
-                        saveHint.value = "已保存，正在后台提炼经验...";
-        const record = result.data.record;
-        if (record && record.id) startExtractPolling(record.id);
+        saveHint.value = "已保存 ✓";
+        // 后端直接返回 {success, id, record, extract_candidate}
+        const record = result.record || result;
+        if (result.extract_candidate) {
+          extractCandidate.value = result.extract_candidate;
+          extractCandidate.value.source_record_id = result.id;
+          saveHint.value = "已保存，AI 已提炼出经验建议 ↓";
+        }
       } catch (e) {
         saveHint.value = `保存失败：${e.message}`;
       } finally {
@@ -841,7 +846,7 @@ createApp({
         title: extractCandidate.value.title || "",
         content: extractCandidate.value.content || "",
         category: extractCandidate.value.category || "",
-        tags: candidateTagsText.value.split("，").map(s => s.trim()).filter(Boolean),
+        tags: candidateTagsText.value || "",
         source: "extracted",
         source_record_id: extractCandidate.value.source_record_id || null,
       };
@@ -879,8 +884,8 @@ createApp({
       });
       try {
         const result = await request(`/api/experiences?${params}`);
-        experiences.value = result.data.items || [];
-        total.value = result.data.total || 0;
+        experiences.value = result.items || result.data?.items || [];
+        total.value = result.total || result.data?.total || 0;
       } catch {}
     }
 
@@ -894,8 +899,8 @@ createApp({
       ragResults.value = [];
       try {
         const result = await request("/api/search", "POST", { query, top_k: 5 });
-        ragAnswer.value = result.data.answer || "未找到相关经验。";
-        ragResults.value = result.data.sources || [];
+        ragAnswer.value = result.answer || "未找到相关经验。";
+        ragResults.value = result.sources || [];
       } catch (e) {
         ragAnswer.value = `搜索出错：${e.message}`;
       } finally {
